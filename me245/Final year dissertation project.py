@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import numpy as np
 from pathlib import Path
+import yfinance as yf
 #p.s. remember to use camel case instead of PascalCase for java
 
     
@@ -30,16 +31,16 @@ class DataLoader:
         
         #this checks if the path to the file actually exists
         if not dataset_path_object.exists():
-            return f"Error: the file '{dataset_path_object.name}' doesn't exist."
+            raise f"Error: the file '{dataset_path_object.name}' doesn't exist."
         
         #this is a format check
         if dataset_path_object.suffix != '.csv':
-            return "Error: the file type must be a .csv ."
+            raise "Error: the file type must be a .csv ."
         
         try:
             df_dataset = pd.read_csv(dataset_path_object)
         except Exception as file_error:
-            return f"System could not read the file: {file_error}"
+            raise f"System could not read the file: {file_error}"
         
         #we want the same format for all column headings and removing unecessary whitespaces if there are any
         df_dataset.columns = [''.join(column.lower().split()) for column in df_dataset.columns]
@@ -49,14 +50,12 @@ class DataLoader:
         required_column_names = ["date", "high", "low", "volume", "open", "close", "adjclose"]
         
         #checks against required column names against actual column names
-        contain_all_required_titles = [column for column in df_dataset.columns if column in required_column_names]
-        
-        if not contain_all_required_titles:
-            return "The file has not named its columns correctly. They are required to be: 'date', 'high', 'low', 'volume', 'open', 'close', 'adjclose'. Within their respective columns."
+        if not all(col in df_dataset.columns for col in required_column_names):
+            raise ValueError("Critical Error: Missing required OHLCV columns. They are required to be: 'date', 'high', 'low', 'volume', 'open', 'close', 'adjclose'. Within their respective columns.")
         
         #if the file needs a dataset above a threshold of required design. For a dataset to be effectively trained on. in this case if less than 10 lines then it won't accept it
         if df_dataset.shape[0] < 100:
-            return "The file does not meet the minimum requirements for the amount of data to be used within this ."
+            raise "The file does not meet the minimum requirements for the amount of data to be used within this ."
         
         #now handle missing data as it is acceptable
         self.handle_missing_data(df_dataset)
@@ -69,22 +68,34 @@ class DataLoader:
         input_df_dataset = input_df_dataset["date"].dropna()
         
         #extrapolate each columns rows with datasets using the interpolation if there are missing data in columns
-        
+    
+    def create_stock_market_dataset(self):
+        while True:
+            name_of_market = input("Enter the name of the market (capitalized where needed)")
+            start_date_dataset = input("Enter the start date of the dataset (format:YYYY-MM-DD)")
+            end_date_dataset = input("Enter the end date of the dataset (format:YYYY-MM-DD)")
+            try:
+                data = yf.download(name_of_market,start_date_dataset,end_date_dataset)
+                print(data)
+                break
+            except:
+                v = input("data doesn't exist would you like to try again ([y]es or [n]o)")
+                if v.lower() == 'n':
+                    break
             
-            
-        
-        
-            
-        
-        
-        
-        
         
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
 manage and control the necessary logic for this project between the different subset of
 """
 class MainControllerUI:
-    loader = DataLoader()
+    def __init__(self):
+        self.loader = DataLoader()
+    def start(self):
+        return self.loader.create_stock_market_dataset
+        
+
+MainControllerUI().start()
+    
         
         
