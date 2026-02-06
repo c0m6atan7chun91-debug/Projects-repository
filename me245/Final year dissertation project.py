@@ -5,6 +5,7 @@ from pathlib import Path
 import yfinance as yf
 import time
 import numpy as np
+import shutil
 #p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
     """
@@ -26,80 +27,89 @@ class DataLoader:
     def load_and_validate_dataset(self):
         print("="*60)
         #convert the input string input into a path object        
-        datasets_directory = Path('me245/CSV_Files')
-        datasets_to_access = []
+        datasets_directory = Path('me245/CSV_Files_training_unverified')
         datasets_paths_verified = []
         
-        #now we must go through each file within the directory within the CSV_Files
+        #now we must go through each file within the directory within the CSV_Files_training_unverified
         all_sub_directories = list(datasets_directory.glob("*.csv"))
         if all_sub_directories is not None:
-            print("Available CSV files to read from:\n")
-            #glob
-            
-            #change logic
-            for index,file_path in all_sub_directories:
+            #reading in all required files for the 
+            print("Available CSV files training unverified to read from:\n")
+            for file_path in all_sub_directories:
                 #removes the file type at the end of the name. eg pdf for example
+                file_name = file_path.stem
                 if file_path.suffix == ".csv":
-                    print(f"({index})File name: {file_path.stem}  File size: {file_path.stat().st_size / 1024}Kb   File type: {file_path.suffix}.\n")
-                    datasets_to_access.append(file_path)
-            
-            #now we want the users to select which datasets that they would want to use with the model
-            while True:
-                files_users_chosen = input(f"Please enter a numbers from 0 to {len(all_sub_directories) - 1} for what files you want. e.g 0,2 or 0,1,3,4,5.\n")
-                
-                try:
-                    indices = [int(position) for position in files_users_chosen.split(',')]
-                    
-                    #first of all check if the indicies are within range
-                    if (all(0 <= index <= len(datasets_to_access)) for index in indices):
-                        for index in indices:
-                            file_to_verify = datasets_to_access[index]
-                            if self.file_validation(file_to_verify):
-                                #you would want to store all the paths that are 
-                                datasets_paths_verified.append(file_to_verify)
-                               
-                            else:
-                                print(f"The file {datasets_to_access[index].stem} is not a valid file please make the changes to the file as it is your own custom one.\n")
+                    print(f"File name: {file_name}  File size: {file_path.stat().st_size / 1024:.2f}Kb   File type: {file_path.suffix}.\n")
+                    if self.file_validation(file_path):
+                        #you would want to store all the paths that are 
+                        print(f"The file {file_name} is a valid file for the models training process.\n")
+                        datasets_paths_verified.append(file_path)
                         
-                except:
-                    return 4
+                    else:
+                        print(f"The file {file_name} is not a valid file please make the changes to the file as it is your own custom one.\n")
+            
+            #once all the files are checked then we need to be able to decide how many of them will be split up for training. We should simply decided how many files are delegated to training
         else:
             #check if a folder exists and creates it if it doesn't exist
-            directory = Path("me245/CSV_Files_unverified")
-            directory.mkdir(parents=True,exist_ok=True) 
-            return "There are no CSV files to choose from. Please add a CSV file to be read from into the CSV_Files."
+            datasets_directory.mkdir(parents=True,exist_ok=True) 
+            raise Exception("There are no CSV files to choose from. Please add a CSV file to be read from into the CSV_Files.")
+        
+        #check if there are enough files that have been accepted 10 is placebo
+        if len(datasets_paths_verified) >= 10:
+            #we must make the directory if it doesn't exist to store the verified files
+            destination_directory = Path("me245/CSV_Files_training_verified")
+            destination_directory.mkdir(parents=True,exist_ok=True)
+            try:
+                #copy the files that are valid into the folder which is verified
+                for file in datasets_paths_verified:
+                    #need to copy each valid file from the unverified
+                    print()
+                    shutil.move(file, destination_directory / file.name)
+            except Exception as e:
+                raise f"The following problem has occured: {e}."
+        else:
+            raise Exception("There aren't enough valid files for the model to be trained on (it must be at least 10).\n")
+            
+            
             
         
-    def file_validation(self,dataset_directory):
+    def file_validation(self,file_path):
         #this checks if the path to the file actually exists
-        if not dataset_directory.exists():
-            raise f"Error: the file '{dataset_directory.name}' doesn't exist."
-        
-        #this is a format check
-        if dataset_directory.suffix != '.csv':
-            raise "Error: the file type must be a .csv ."
+        if not file_path.exists():
+            raise f"Error: the file '{file_path.name}' doesn't exist."
         
         try:
-            df_dataset = pd.read_csv(dataset_directory)
+            df_dataset = pd.read_csv(file_path)
+            #we want the same format for all column headings and removing unecessary whitespaces if there are any
+            df_dataset.columns = [''.join(column.lower().split()) for column in df_dataset.columns]
+            
+            #we need to check that all the columns contain the requried values within this format
+            #column headings should be designated as open, high, low, close, volume, adjclose, and date get from yahoo finance
+            required_column_names = ["date", "high", "low", "volume", "open", "close", "adjclose"]
+            
+            #checks against required column names against actual column names
+            if not all(col in df_dataset.columns for col in required_column_names):
+                print(f"Critical Error: Missing required OHLCV columns in {file_path.name}. They are required to be: 'date', 'high', 'low', 'volume', 'open', 'close', 'adjclose'. Within their respective columns.")
+                return False
+            
+            #if the file needs a dataset above a threshold of required design. For a dataset to be effectively trained on. in this case if less than 100 days then it won't accept it
+            if df_dataset.shape[0] < 250:
+                print(f"The file {file_path.name} does not meet the minimum requirements for the amount of data to be used within this .")
+                return False
+            
+            #since the file meets all required standards and has been checked to be a csv before being entered into this algorithm we will make sure it is ordered by date if it is a custom file
+            #convert date string to a day time object
+            df_dataset['date'] = pd.to_datetime(df_dataset['date'])
+            df_dataset = df_dataset.sort_values(by='date',ascending=True)
+            #saves the ordering to the file in a csv
+            df_dataset.to_csv(file_path)
+            return True
         except Exception as file_error:
-            raise f"System could not read the file: {file_error}"
-        
-        #we want the same format for all column headings and removing unecessary whitespaces if there are any
-        df_dataset.columns = [''.join(column.lower().split()) for column in df_dataset.columns]
-        
-        #we need to check that all the columns contain the requried values within this format
-        #column headings should be designated as open, high, low, close, volume, adjclose, and date get from yahoo finance
-        required_column_names = ["date", "high", "low", "volume", "open", "close", "adjclose"]
-        
-        #checks against required column names against actual column names
-        if not all(col in df_dataset.columns for col in required_column_names):
-            raise ValueError("Critical Error: Missing required OHLCV columns. They are required to be: 'date', 'high', 'low', 'volume', 'open', 'close', 'adjclose'. Within their respective columns.")
-        
-        #if the file needs a dataset above a threshold of required design. For a dataset to be effectively trained on. in this case if less than 100 days then it won't accept it
-        if df_dataset.shape[0] < 100:
-            raise "The file does not meet the minimum requirements for the amount of data to be used within this ."
+            print(f"System could not read the file {file_path.name} as a df: {file_error}")
+            return False
         
         #cannot handle missing data as that would leave too many problems. We must have the assumption that the data is complete like when using yfinance
+        #sort the dates within the file then remove the column before fitting as it can lead to overfitting.
         
         
     
@@ -152,7 +162,7 @@ class DataLoader:
                             print(f"Success! Captured {len(data)} rows.")
                             
                             #check if a folder exists and define it
-                            directory = Path("me245/CSV_Files_unverified")
+                            directory = Path("me245/CSV_Files_training_unverified")
                             directory.mkdir(parents=True,exist_ok=True) 
                             '''
                             parent checks if there is a missing file in the given path and if there is one creates it -it creates the parent chain of the file directory given.
@@ -196,6 +206,10 @@ class DataLoader:
         finally:
             print("="*60)
             
+class Preprocessor:
+    def classical_machine_learning_data_extraction(self):
+        ferf
+            
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
 manage and control the necessary logic for this project between the different subset of
@@ -219,7 +233,12 @@ class MainControllerUI:
         print("="*60)
         print("\n")
         
+    def start_classical_model(self):
+        self.loader.load_and_validate_dataset()
         
         
-MainControllerUI().copyright_disclaimer()
-MainControllerUI().start()
+        
+ui =  MainControllerUI()
+ui.copyright_disclaimer()
+ui.start()
+ui.start_classical_model()
