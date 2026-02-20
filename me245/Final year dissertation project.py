@@ -9,7 +9,7 @@ import shutil
 #p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
     """
-    Handles loading, metadata extraction, and structural validation 
+    Handles loading, metadata extraction, and structural validation =,
     of financial datasets.
     """
     """
@@ -92,15 +92,19 @@ class DataLoader:
                 print(f"Critical Error: Missing required OHLCV columns in {file_path.name}. They are required to be: 'date', 'high', 'low', 'volume', 'open', 'close', 'adjclose'. Within their respective columns.")
                 return False
             
-            #if the file needs a dataset above a threshold of required design. For a dataset to be effectively trained on. in this case if less than 100 days then it won't accept it
-            if df_dataset.shape[0] < 250:
+            #if the file needs a dataset above a threshold of required design. For a dataset to be effectively trained on. in this case if less than 1000 days then it won't accept it
+            if df_dataset.shape[0] < 1000:
                 print(f"The file {file_path.name} does not meet the minimum requirements for the amount of data to be used within this .")
                 return False
             
             #since the file meets all required standards and has been checked to be a csv before being entered into this algorithm we will make sure it is ordered by date if it is a custom file
-            #convert date string to a day time object
+            #convert date string to a day time object and drop duplicate values
             df_dataset['date'] = pd.to_datetime(df_dataset['date'])
+            df_dataset = df_dataset.drop_duplicates(subset=['date'], keep='first')
             df_dataset = df_dataset.sort_values(by='date',ascending=True)
+            
+            #deletes rows with missing values
+            df_dataset = df_dataset.dropna().reset_index(drop=True)
             #saves the ordering to the file in a csv
             df_dataset.to_csv(file_path)
             return True
@@ -207,9 +211,115 @@ class DataLoader:
             print("="*60)
             
 class Preprocessor:
-    def classical_machine_learning_data_extraction(self):
-        ferf
-            
+    
+    def classical_machine_learning_data_extraction1(self, df_data_to_extract):
+        df = df_data_to_extract.copy()
+
+        # --- Step 1: Ensure date column is datetime and sort chronologically ---
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values(by='date', ascending=True).reset_index(drop=True)
+
+        # --- Step 2: Log Returns (achieves stationarity) ---
+        # log(P_t / P_{t-1}) applied to adjclose which accounts for splits/dividends
+        df['log_return'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
+
+        # --- Step 3: Multi-Scale Rolling Volatility ---
+        # Three windows give the model a volatility "regime" so it can distinguish
+        # between a sustained volatile period and a sudden isolated spike.
+        # Anomalies detected: systemic risk events (e.g. COVID crash, 2008 crisis),
+        # volatility regime changes, and short-lived shock events.
+        # A 5-day spike inside a calm 20-day window is far more suspicious than
+        # the same spike during an already-turbulent period.
+        df['rolling_volatility_5d']  = df['log_return'].rolling(window=5)
+        df['rolling_volatility_10d'] = df['log_return'].rolling(window=10)
+        df['rolling_volatility_20d'] = df['log_return'].rolling(window=20)
+
+        # --- Step 4: Intraday Price Range ---
+        # (high - low) / open — intraday movement relative to the opening price.
+        # Anomalies detected: flash crashes, short squeezes, and market manipulation
+        # (e.g. spoofing). These events produce extreme intraday swings even when
+        # the closing price appears superficially normal in isolation.
+        df['intraday_range'] = (df['high'] - df['low']) / df['open']
+
+        # --- Step 5: Volume Ratio ---
+        # Current volume divided by its 20-day rolling mean.
+        # Anomalies detected: insider trading (unusual volume before announcements),
+        # pump-and-dump schemes, panic selling/buying events, and earnings surprises.
+        # A ratio of 5x is far more informative than the raw volume figure alone.
+        df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20)
+
+        # --- Step 6: Close-to-Open Gap ---
+        # (open_t - close_{t-1}) / close_{t-1} — the overnight price shock.
+        # Anomalies detected: earnings shocks, geopolitical events, regulatory
+        # announcements, M&A news, and black swan events. These information-driven
+        # gaps do not appear in intraday data and are a classic anomaly signature.
+        df['close_to_open_gap'] = (df['open'] - df['adjclose'].shift(1)) / df['adjclose'].shift(1)
+
+        # --- Step 7: Candlestick Wick Ratios (Upper & Lower Shadow) ---
+        # Upper shadow: how far the price was pushed above the open/close then rejected.
+        # Lower shadow: how far the price was pushed below the open/close then recovered.
+        # A large upper wick means buyers drove the price up but sellers forcefully rejected
+        # it — a classic signature of a failed pump, spoofing, or distribution by smart money.
+        # A large lower wick means the opposite: a failed sell-off or capitulation event.
+        # Unlike intraday_range which only captures total width, these capture where the
+        # close landed within that range, revealing the directional intent behind the move.
+        # Anomalies detected: failed pump-and-dump attempts, spoofing, stop-loss hunting,
+        # capitulation events, and institutional accumulation/distribution.
+        intraday_width = df['high'] - df['low']
+        df['upper_shadow'] = (df['high'] - df[['open', 'close']].max(axis=1)) / intraday_width
+        df['lower_shadow'] = (df[['open', 'close']].min(axis=1) - df['low']) / intraday_width
+
+        # --- Step 8: Day-over-Day Log Changes ---
+        # log_return already captures close-to-close shift stationarily via log(adjclose_t / adjclose_{t-1}).
+        # The remaining OHLCV columns still need the same treatment — a raw difference
+        # is non-stationary and not comparable across different stocks or price levels.
+        # log(x_t / x_{t-1}) is used consistently: stationary, symmetric, and
+        # scale-independent regardless of whether the asset trades at $5 or $500.
+        #
+        # log_open_change   — detects unusual shifts between consecutive opening prices,
+        #                     separate from the close-to-open gap already captured.
+        # log_high_change   — detects whether the market is making higher or lower highs
+        #                     day over day; a signal not captured by intraday_range alone.
+        # log_low_change    — same for lows; consecutive lower lows signal sustained
+        #                     selling pressure and potential capitulation events.
+        # log_volume_change — captures sudden day-over-day volume acceleration or collapse,
+        #                     distinct from volume_ratio which compares against a 20-day mean.
+        df['log_open_change']   = np.log(df['open']   / df['open'].shift(1))
+        df['log_high_change']   = np.log(df['high']   / df['high'].shift(1))
+        df['log_low_change']    = np.log(df['low']    / df['low'].shift(1))
+        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1))
+
+        # --- Step 9: Temporal Feature Extraction ---
+        # Year is kept as a plain integer (not cyclical) — years are linear and do not
+        # wrap around. This allows the model to contextualise what is "normal" per year,
+        # e.g. a volatility spike normal in 2020 (COVID) may be anomalous in 2023.
+        df['year'] = df['date'].dt.year
+
+        # Sine/Cosine transforms for month so the model understands Dec (12) is
+        # adjacent to Jan (1) — months are cyclical, years are not.
+        df['month_sin'] = np.sin(2 * np.pi * df['date'].dt.month / 12)
+        df['month_cos'] = np.cos(2 * np.pi * df['date'].dt.month / 12)
+
+        # --- Step 10: Drop date column before returning ---
+        # Date is not a numeric feature — keeping it risks data leakage
+        df = df.drop(columns=['date'])
+
+        # --- Step 11: Drop rows with NaN ---
+        # Drops rows introduced by the rolling window/shift AND any genuine gaps in the
+        # raw data. We do not impute — a missing price is not assumed to equal the last
+        # known price, as that fabricates flat periods the model would learn as "normal".
+        df = df.dropna().reset_index(drop=True)
+
+        # --- Step 12: Z-Score Normalisation across all features ---
+        # (x - mean) / std — centres each feature at 0 with unit variance.
+        # This ensures no single attribute dominates the anomaly score due to scale.
+        df = (df - df.mean()) / df.std()
+
+        return df
+    
+    def data_extraction_of_files(self):
+        print("="*60)
+
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
 manage and control the necessary logic for this project between the different subset of
@@ -217,6 +327,7 @@ manage and control the necessary logic for this project between the different su
 class MainControllerUI:
     def __init__(self):
         self.loader = DataLoader()
+        self.preprocessor = Preprocessor()
         self.data_loaded = []
     def start(self):
         return self.loader.create_stock_market_dataset()
@@ -235,6 +346,24 @@ class MainControllerUI:
         
     def start_classical_model(self):
         self.loader.load_and_validate_dataset()
+        #convert the input string input into a path object        
+        datasets_directory = Path('me245/CSV_Files_training_verified')
+        datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
+        all_sub_directories = list(datasets_directory.glob("*.csv"))
+        if all_sub_directories is not None:
+            #we need to recheck the files as the user might have moved them to the wrong location
+            for file_path in all_sub_directories:
+                if self.loader.file_validation(file_path):
+                    data_extracted = self.preprocessor.classical_machine_learning_data_extraction1()
+                    #we create all the features
+                    #do a split
+                    #then we z-score the needed attributes so that the AI cannot see into the rest of the dataset
+                else:
+                    shutil.move(file_path, datasets_directory_unverfied / file_path.name)
+                    raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
+        else:
+            raise "no files exist"
+        
         
         
         
