@@ -91,5 +91,5 @@ This prevents Data Leakage (where the model accidentally "sees" the future durin
 ### Reading
 link: https://arxiv.org/pdf/1811.12808
 
-<mark>I have been keeping a log!!! Just forgotten to put it into the correct directory so it has now been commited. If you want verification my professor has seen this in the interview before I had made the commit</mark>
+<mark>I have been keeping a log!!! Just forgotten to put it into the correct directory so it has now been commited. If you want verification my professor has seen this in the interview before I had made the commit this includes Dr Crole</mark>
 

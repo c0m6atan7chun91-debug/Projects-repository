@@ -6,6 +6,8 @@ import yfinance as yf
 import time
 import numpy as np
 import shutil
+from sklearn.ensemble import IsolationForest
+
 #p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
     """
@@ -230,9 +232,9 @@ class Preprocessor:
         # volatility regime changes, and short-lived shock events.
         # A 5-day spike inside a calm 20-day window is far more suspicious than
         # the same spike during an already-turbulent period.
-        df['rolling_volatility_5d']  = df['log_return'].rolling(window=5)
-        df['rolling_volatility_10d'] = df['log_return'].rolling(window=10)
-        df['rolling_volatility_20d'] = df['log_return'].rolling(window=20)
+        df['rolling_volatility_5d']  = df['log_return'].rolling(window=5).std()
+        df['rolling_volatility_10d'] = df['log_return'].rolling(window=10).std()
+        df['rolling_volatility_20d'] = df['log_return'].rolling(window=20).std()
 
         # --- Step 4: Intraday Price Range ---
         # (high - low) / open — intraday movement relative to the opening price.
@@ -246,7 +248,7 @@ class Preprocessor:
         # Anomalies detected: insider trading (unusual volume before announcements),
         # pump-and-dump schemes, panic selling/buying events, and earnings surprises.
         # A ratio of 5x is far more informative than the raw volume figure alone.
-        df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20)
+        df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
 
         # --- Step 6: Close-to-Open Gap ---
         # (open_t - close_{t-1}) / close_{t-1} — the overnight price shock.
@@ -304,21 +306,32 @@ class Preprocessor:
         # Date is not a numeric feature — keeping it risks data leakage
         df = df.drop(columns=['date'])
 
-        # --- Step 11: Drop rows with NaN ---
-        # Drops rows introduced by the rolling window/shift AND any genuine gaps in the
-        # raw data. We do not impute — a missing price is not assumed to equal the last
-        # known price, as that fabricates flat periods the model would learn as "normal".
+        # --- Step 11: Drop NaN rows ---
+        # Shift and rolling windows introduce NaN at the head of the dataset.
+        # We do not impute — fabricating values would teach the model that
+        # stagnant flat periods are normal, reducing anomaly sensitivity.
         df = df.dropna().reset_index(drop=True)
-
-        # --- Step 12: Z-Score Normalisation across all features ---
-        # (x - mean) / std — centres each feature at 0 with unit variance.
-        # This ensures no single attribute dominates the anomaly score due to scale.
-        df = (df - df.mean()) / df.std()
 
         return df
     
-    def data_extraction_of_files(self):
-        print("="*60)
+    def data_split_80_20_and_zscore(self,df):
+        #the following code creates a 80/20 split
+        split_index = int(len(df)) * 0.8
+        df_train = df.iloc[:split_index].reset_index(drop=True)
+        df_val   = df.iloc[split_index:].reset_index(drop=True)
+        
+        # --- Step 12: Z-Score Normalisation across all features ---
+        # (x - mean) / std — centres each feature at 0 with unit variance.
+        # This ensures no single attribute dominates the anomaly score due to scale.
+        df_train = (df_train - df_train.mean()) / df_train.std()
+        df_val = (df_val - df_val.mean()) / df_val.std()
+        #returns the splits
+        return df_train, df_val
+    
+class ClassicalModelManager:
+    def __init__(self, contamintion):
+        # Contamination is the expected % of anomalies (e.g., 3%)
+        
 
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -354,10 +367,14 @@ class MainControllerUI:
             #we need to recheck the files as the user might have moved them to the wrong location
             for file_path in all_sub_directories:
                 if self.loader.file_validation(file_path):
-                    data_extracted = self.preprocessor.classical_machine_learning_data_extraction1()
+                    data_extracted = pd.read_csv(file_path)
+                    data_extracted = self.preprocessor.classical_machine_learning_data_extraction1(data_extracted)
+                    training_data, validation_data = self.preprocessor.data_split_80_20_and_zscore(data_extracted)
+                    
                     #we create all the features
                     #do a split
                     #then we z-score the needed attributes so that the AI cannot see into the rest of the dataset
+                    #then we starting training the model and then use the validation data for it
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
