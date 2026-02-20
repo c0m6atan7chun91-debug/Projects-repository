@@ -316,15 +316,20 @@ class Preprocessor:
     
     def data_split_80_20_and_zscore(self,df):
         #the following code creates a 80/20 split
-        split_index = int(len(df)) * 0.8
+        split_index = int(len(df) * 0.8)
         df_train = df.iloc[:split_index].reset_index(drop=True)
         df_val   = df.iloc[split_index:].reset_index(drop=True)
         
         # --- Step 12: Z-Score Normalisation across all features ---
         # (x - mean) / std — centres each feature at 0 with unit variance.
         # This ensures no single attribute dominates the anomaly score due to scale.
-        df_train = (df_train - df_train.mean()) / df_train.std()
-        df_val = (df_val - df_val.mean()) / df_val.std()
+        #if i normalize it all in one go that would be causing data leakage as it would go into the validation set
+        #The alternative here is to see what is normal behaviour within the market and apply that same logic to the 
+        #validation set to identify these anomalies based on normal behaviour
+        df_train_mean = df_train.mean()
+        df_train_std = df_train.std()
+        df_train = (df_train - df_train_mean) / df_train_std
+        df_val = (df_val - df_train_mean) / df_train_std
         #returns the splits
         return df_train, df_val
     
