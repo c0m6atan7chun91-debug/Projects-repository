@@ -217,84 +217,68 @@ class Preprocessor:
     def classical_machine_learning_data_extraction1(self, df_data_to_extract):
         df = df_data_to_extract.copy()
 
-        # --- Step 1: Ensure date column is datetime and sort chronologically ---
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.sort_values(by='date', ascending=True).reset_index(drop=True)
-
-        # --- Step 2: Log Returns (achieves stationarity) ---
-        # log(P_t / P_{t-1}) applied to adjclose which accounts for splits/dividends
-        df['log_return'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
-
-        # --- Step 3: Multi-Scale Rolling Volatility ---
-        # Three windows give the model a volatility "regime" so it can distinguish
-        # between a sustained volatile period and a sudden isolated spike.
-        # Anomalies detected: systemic risk events (e.g. COVID crash, 2008 crisis),
-        # volatility regime changes, and short-lived shock events.
-        # A 5-day spike inside a calm 20-day window is far more suspicious than
-        # the same spike during an already-turbulent period.
-        df['rolling_volatility_5d']  = df['log_return'].rolling(window=5).std()
-        df['rolling_volatility_10d'] = df['log_return'].rolling(window=10).std()
-        df['rolling_volatility_20d'] = df['log_return'].rolling(window=20).std()
-
-        # --- Step 4: Intraday Price Range ---
         # (high - low) / open — intraday movement relative to the opening price.
         # Anomalies detected: flash crashes, short squeezes, and market manipulation
         # (e.g. spoofing). These events produce extreme intraday swings even when
         # the closing price appears superficially normal in isolation.
         df['intraday_range'] = (df['high'] - df['low']) / df['open']
 
-        # --- Step 5: Volume Ratio ---
         # Current volume divided by its 20-day rolling mean.
         # Anomalies detected: insider trading (unusual volume before announcements),
         # pump-and-dump schemes, panic selling/buying events, and earnings surprises.
         # A ratio of 5x is far more informative than the raw volume figure alone.
         df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
 
-        # --- Step 6: Close-to-Open Gap ---
         # (open_t - close_{t-1}) / close_{t-1} — the overnight price shock.
         # Anomalies detected: earnings shocks, geopolitical events, regulatory
         # announcements, M&A news, and black swan events. These information-driven
         # gaps do not appear in intraday data and are a classic anomaly signature.
         df['close_to_open_gap'] = (df['open'] - df['adjclose'].shift(1)) / df['adjclose'].shift(1)
 
-        # --- Step 7: Candlestick Wick Ratios (Upper & Lower Shadow) ---
-        # Upper shadow: how far the price was pushed above the open/close then rejected.
-        # Lower shadow: how far the price was pushed below the open/close then recovered.
-        # A large upper wick means buyers drove the price up but sellers forcefully rejected
-        # it — a classic signature of a failed pump, spoofing, or distribution by smart money.
-        # A large lower wick means the opposite: a failed sell-off or capitulation event.
-        # Unlike intraday_range which only captures total width, these capture where the
-        # close landed within that range, revealing the directional intent behind the move.
-        # Anomalies detected: failed pump-and-dump attempts, spoofing, stop-loss hunting,
-        # capitulation events, and institutional accumulation/distribution.
+
+        """Candlestick Wick Ratios (Upper & Lower Shadow)
+        Upper shadow: how far the price was pushed above the open/close (based on which is higher) then is divided by the difference of the stock from its lowest compared to its highest.
+        Lower shadow: how far the price was pushed below the open/close (based on which is lower) then is divided by the difference of the stock from its lowest compared to its highest.
+        A large upper wick means buyers drove the price up but sellers forcefully sell leading to it going significantly lower comapared to a high point
+        A large lower wick means that a buyer sold his shares causing 
+        Unlike intraday_range which only captures total width, these capture where the
+        close landed within that range, revealing the directional intent behind the move.
+        Anomalies detected: failed pump-and-dump attempts  (which can cause a flash crash), spoofing(the buyer sells and sells all his shares causing other sellers to sell to drive the price down then a buyer
+        can buy them at a much lower price to drive the price up(this can cause a flash crash) if there is someone who can buy the shares afterwards)
+        capitulation events, and institutional accumulation/distribution."""
         intraday_width = df['high'] - df['low']
         df['upper_shadow'] = (df['high'] - df[['open', 'close']].max(axis=1)) / intraday_width
         df['lower_shadow'] = (df[['open', 'close']].min(axis=1) - df['low']) / intraday_width
 
-        # --- Step 8: Day-over-Day Log Changes ---
-        # log_return already captures close-to-close shift stationarily via log(adjclose_t / adjclose_{t-1}).
-        # The remaining OHLCV columns still need the same treatment — a raw difference
-        # is non-stationary and not comparable across different stocks or price levels.
-        # log(x_t / x_{t-1}) is used consistently: stationary, symmetric, and
-        # scale-independent regardless of whether the asset trades at $5 or $500.
-        #
-        # log_open_change   — detects unusual shifts between consecutive opening prices,
-        #                     separate from the close-to-open gap already captured.
-        # log_high_change   — detects whether the market is making higher or lower highs
-        #                     day over day; a signal not captured by intraday_range alone.
-        # log_low_change    — same for lows; consecutive lower lows signal sustained
-        #                     selling pressure and potential capitulation events.
-        # log_volume_change — captures sudden day-over-day volume acceleration or collapse,
-        #                     distinct from volume_ratio which compares against a 20-day mean.
+        """The remaining OHLCV columns still need the same treatment — a raw data rate of change isn't consistent and not comparable across different stocks or price levels.
+        log_open_change   — captures sudden day-over-day open return in relaion to the previous day
+        log_high_change   — captures sudden day-over-day high return in relaion to the previous day
+        log_low_change    — captures sudden day-over-day low return in relaion to the previous day; captures consecutive lower lows signal sustained selling pressure and potential capitulation events.
+        log_volume_change — captures sudden day-over-day volume return in relaion to the previous day"""
         df['log_open_change']   = np.log(df['open']   / df['open'].shift(1))
         df['log_high_change']   = np.log(df['high']   / df['high'].shift(1))
         df['log_low_change']    = np.log(df['low']    / df['low'].shift(1))
         df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1))
+        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
+        
+        """Multi-Scale Rolling Volatility
+        Three windows give the model a volatility "regime" so it can distinguish
+        between a sustained volatile period and a sudden isolated spike.
+        Anomalies detected: systemic risk events (e.g. COVID crash, 2008 crisis), and short-lived shock events.
+        A 5-day spike inside a calm 20-day window is far more suspicious than the same spike during an already volatile period.
+        We also use use adjclose instead of the other Values due to adjclose is a much better measure than the rest of the raw values.
+        As it adjusts for stock splits and dividends; so a 2 to 1 split doesn't show up as a fake drop in your returns. So a split would cause massive outliers in the rest of the raw values in the dataset.
+        Also if we did apply it to high or low it would measure the volatility of the values as they can fluctuate highly through out a course of a set time period.
+        This helps identify flash crashes as if there is a sharp spike in a 5 day window and the 10 day/20day window doesn't pick it up significantly its then likely to be a flash crash. though it can also find other anomalies such as a gap down event"""
+        df['rolling_volatility_5d']  = df['log_adjclose_change'].rolling(window=5).std()
+        df['rolling_volatility_10d'] = df['log_adjclose_change'].rolling(window=10).std()
+        df['rolling_volatility_20d'] = df['log_adjclose_change'].rolling(window=20).std()
 
-        # --- Step 9: Temporal Feature Extraction ---
+
         # Year is kept as a plain integer (not cyclical) — years are linear and do not
         # wrap around. This allows the model to contextualise what is "normal" per year,
         # e.g. a volatility spike normal in 2020 (COVID) may be anomalous in 2023.
+        df['date'] = pd.to_datetime(df['date'])
         df['year'] = df['date'].dt.year
 
         # Sine/Cosine transforms for month so the model understands Dec (12) is
@@ -302,11 +286,9 @@ class Preprocessor:
         df['month_sin'] = np.sin(2 * np.pi * df['date'].dt.month / 12)
         df['month_cos'] = np.cos(2 * np.pi * df['date'].dt.month / 12)
 
-        # --- Step 10: Drop date column before returning ---
         # Date is not a numeric feature — keeping it risks data leakage
         df = df.drop(columns=['date'])
 
-        # --- Step 11: Drop NaN rows ---
         # Shift and rolling windows introduce NaN at the head of the dataset.
         # We do not impute — fabricating values would teach the model that
         # stagnant flat periods are normal, reducing anomaly sensitivity.
@@ -320,7 +302,6 @@ class Preprocessor:
         df_train = df.iloc[:split_index].reset_index(drop=True)
         df_val   = df.iloc[split_index:].reset_index(drop=True)
         
-        # --- Step 12: Z-Score Normalisation across all features ---
         # (x - mean) / std — centres each feature at 0 with unit variance.
         # This ensures no single attribute dominates the anomaly score due to scale.
         #if i normalize it all in one go that would be causing data leakage as it would go into the validation set
@@ -334,8 +315,20 @@ class Preprocessor:
         return df_train, df_val
     
 class ClassicalModelManager:
-    def __init__(self, contamintion):
+    def __init__(self, contamintion_input):
         # Contamination is the expected % of anomalies (e.g., 3%)
+        """
+        Initialize the Isolation Forest model.
+        
+        :param n_estimators: Number of base estimators (trees) in the ensemble.
+        :param contamination: Proportion of outliers in the data (0 < contamination <= 0.5).
+        :param random_state: Random seed for reproducibility.
+        :param n_jobs: decide how many cores are being used
+        :param max_samples: decides how many data points will be randomly sampled per tree to be isolated
+        :param warmstart: decides if it will continue based off of the previously made trees
+        :param bootstrap: It decides if each tree uses a random sample with or without replacement (the latter by default)
+        """
+        self.iso_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)
         
 
 """ 
@@ -346,6 +339,7 @@ class MainControllerUI:
     def __init__(self):
         self.loader = DataLoader()
         self.preprocessor = Preprocessor()
+        self.classical_model = ClassicalModelManager(0.03)
         self.data_loaded = []
     def start(self):
         return self.loader.create_stock_market_dataset()
@@ -377,16 +371,13 @@ class MainControllerUI:
                     training_data, validation_data = self.preprocessor.data_split_80_20_and_zscore(data_extracted)
                     
                     #we create all the features
-                    #do a split
-                    #then we z-score the needed attributes so that the AI cannot see into the rest of the dataset
+                    #do a split and normalize the data based on the normality of the training data
                     #then we starting training the model and then use the validation data for it
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
         else:
             raise "no files exist"
-        
-        
         
         
 ui =  MainControllerUI()
