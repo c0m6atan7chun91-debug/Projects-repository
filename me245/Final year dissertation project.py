@@ -7,6 +7,10 @@ import time
 import numpy as np
 import shutil
 from sklearn.ensemble import IsolationForest
+import shap
+import lime
+import lime.lime_tabular
+import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
 #p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
@@ -328,7 +332,33 @@ class ClassicalModelManager:
         :param warmstart: decides if it will continue based off of the previously made trees
         :param bootstrap: It decides if each tree uses a random sample with or without replacement (the latter by default)
         """
-        self.iso_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)
+        self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)#
+    
+    def classical_model_training(self,train,val):
+        self.isolation_forest.fit(train)
+        
+        #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
+        scores = self.isolation_forest.predict(val)
+        #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
+        prediction = self.isolation_forest.decision_function(val)
+        return scores, prediction
+    
+class Interpretation:
+    def representation_classical_model(self, scores, predictions,data_extracted, ticker_name):
+       
+        # 2. Add to dataframe for visualization
+        data_extracted['anomaly_score'] = scores
+        data_extracted['is_anomaly'] = predictions
+        
+        # 3. Capture the 'Black Swan' (Extreme Anomaly)
+        extreme_anomaly = data_extracted.loc[data_extracted['anomaly_score'].idxmin()]
+        
+        print(f"--- {ticker_name} Analysis ---")
+        print(f"Total Anomalies Found: {len(data_extracted[data_extracted['is_anomaly'] == -1])}")
+        print(f"Most Extreme Event Date: {extreme_anomaly.name}")
+        
+        # Trigger the interpretation logic we discussed
+        self.generate_interpretations(data_extracted, ticker_name)
         
 
 """ 
@@ -339,7 +369,8 @@ class MainControllerUI:
     def __init__(self):
         self.loader = DataLoader()
         self.preprocessor = Preprocessor()
-        self.classical_model = ClassicalModelManager(0.03)
+        self.classical_model = ClassicalModelManager(0.01)
+        self.interprebility = Interpretation()
         self.data_loaded = []
     def start(self):
         return self.loader.create_stock_market_dataset()
@@ -370,6 +401,9 @@ class MainControllerUI:
                     data_extracted = self.preprocessor.classical_machine_learning_data_extraction1(data_extracted)
                     training_data, validation_data = self.preprocessor.data_split_80_20_and_zscore(data_extracted)
                     
+                    scores, prediction = self.classical_model.classical_model_training(training_data,validation_data)
+                    
+                    self.interprebility.representation(scores,prediction, validation_data,file_path.name)
                     #we create all the features
                     #do a split and normalize the data based on the normality of the training data
                     #then we starting training the model and then use the validation data for it
