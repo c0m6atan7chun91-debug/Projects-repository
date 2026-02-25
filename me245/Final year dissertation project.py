@@ -112,7 +112,7 @@ class DataLoader:
             #deletes rows with missing values
             df_dataset = df_dataset.dropna().reset_index(drop=True)
             #saves the ordering to the file in a csv
-            df_dataset.to_csv(file_path)
+            df_dataset.to_csv(file_path, index=False)
             return True
         except Exception as file_error:
             print(f"System could not read the file {file_path.name} as a df: {file_error}")
@@ -185,7 +185,7 @@ class DataLoader:
                             
                     #need to wait frequent requests may cause it to stop and deny further access
                     #if there is a problem in access for developers or markers please delete the associated cookies to yfinance to reset this problem
-                    time.sleep(2)
+                    time.sleep(5)
                             
                 
                     #User may need more than one dataset
@@ -218,7 +218,7 @@ class DataLoader:
             
 class Preprocessor:
     
-    def classical_machine_learning_data_extraction1(self, df_data_to_extract):
+    def classical_machine_learning_data_extraction(self, df_data_to_extract):
         df = df_data_to_extract.copy()
 
         # (high - low) / open — intraday movement relative to the opening price.
@@ -297,26 +297,11 @@ class Preprocessor:
         # We do not impute — fabricating values would teach the model that
         # stagnant flat periods are normal, reducing anomaly sensitivity.
         df = df.dropna().reset_index(drop=True)
+        
+        #normalize all scales so that before data concatination all data is on the same scale and can see what is an outlier for the model
+        df = (df - df.mean()) / df.std()
 
         return df
-    
-    def data_split_80_20_and_zscore(self,df):
-        #the following code creates a 80/20 split
-        split_index = int(len(df) * 0.8)
-        df_train = df.iloc[:split_index].reset_index(drop=True)
-        df_val   = df.iloc[split_index:].reset_index(drop=True)
-        
-        # (x - mean) / std — centres each feature at 0 with unit variance.
-        # This ensures no single attribute dominates the anomaly score due to scale.
-        #if i normalize it all in one go that would be causing data leakage as it would go into the validation set
-        #The alternative here is to see what is normal behaviour within the market and apply that same logic to the 
-        #validation set to identify these anomalies based on normal behaviour
-        df_train_mean = df_train.mean()
-        df_train_std = df_train.std()
-        df_train = (df_train - df_train_mean) / df_train_std
-        df_val = (df_val - df_train_mean) / df_train_std
-        #returns the splits
-        return df_train, df_val
     
 class ClassicalModelManager:
     def __init__(self, contamintion_input):
@@ -332,34 +317,38 @@ class ClassicalModelManager:
         :param warmstart: decides if it will continue based off of the previously made trees
         :param bootstrap: It decides if each tree uses a random sample with or without replacement (the latter by default)
         """
-        self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)#
+        self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)
     
     def classical_model_training(self,train,val):
+        #Each time .fit() is called completely overwrites it previous training each time it is called so it needs to train all in one go
         self.isolation_forest.fit(train)
-        
-        #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
-        scores = self.isolation_forest.predict(val)
-        #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
-        prediction = self.isolation_forest.decision_function(val)
-        return scores, prediction
     
+    def classical_model_prediction(self,unseen_data):
+        #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
+        scores = self.isolation_forest.predict(unseen_data)
+        #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
+        prediction = self.isolation_forest.decision_function(unseen_data)
+        return scores, prediction
 class Interpretation:
     def representation_classical_model(self, scores, predictions,data_extracted, ticker_name):
        
-        # 2. Add to dataframe for visualization
-        data_extracted['anomaly_score'] = scores
-        data_extracted['is_anomaly'] = predictions
-        
-        # 3. Capture the 'Black Swan' (Extreme Anomaly)
-        extreme_anomaly = data_extracted.loc[data_extracted['anomaly_score'].idxmin()]
-        
-        print(f"--- {ticker_name} Analysis ---")
-        print(f"Total Anomalies Found: {len(data_extracted[data_extracted['is_anomaly'] == -1])}")
-        print(f"Most Extreme Event Date: {extreme_anomaly.name}")
-        
-        # Trigger the interpretation logic we discussed
-        self.generate_interpretations(data_extracted, ticker_name)
-        
+        # Add scores and labels to dataframe
+        data_extracted['anomaly_score'] = predictions
+        data_extracted['is_anomaly'] = scores
+
+        # --- Anomaly Score Distribution ---
+        _, ax = plt.subplots(figsize=(10, 5))
+        ax.hist(data_extracted[data_extracted['is_anomaly'] == 1]['anomaly_score'],
+                bins=50, color='steelblue', alpha=0.7, label='Normal')
+        ax.hist(data_extracted[data_extracted['is_anomaly'] == -1]['anomaly_score'],
+                bins=50, color='red', alpha=0.7, label='Anomaly')
+        ax.axvline(0, color='black', linewidth=1, linestyle='--', label='Threshold (0)')
+        ax.set_title(f'{ticker_name} — Anomaly Score Distribution')
+        ax.set_xlabel('Anomaly Score (lower = more anomalous)')
+        ax.set_ylabel('Number of Days')
+        ax.legend()
+        plt.tight_layout()
+        plt.show()
 
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -393,23 +382,19 @@ class MainControllerUI:
         datasets_directory = Path('me245/CSV_Files_training_verified')
         datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
         all_sub_directories = list(datasets_directory.glob("*.csv"))
+        complete_set_of_training_data
         if all_sub_directories is not None:
             #we need to recheck the files as the user might have moved them to the wrong location
+            dataset_list = []
             for file_path in all_sub_directories:
                 if self.loader.file_validation(file_path):
-                    data_extracted = pd.read_csv(file_path)
-                    data_extracted = self.preprocessor.classical_machine_learning_data_extraction1(data_extracted)
-                    training_data, validation_data = self.preprocessor.data_split_80_20_and_zscore(data_extracted)
-                    
-                    scores, prediction = self.classical_model.classical_model_training(training_data,validation_data)
-                    
-                    self.interprebility.representation(scores,prediction, validation_data,file_path.name)
-                    #we create all the features
-                    #do a split and normalize the data based on the normality of the training data
-                    #then we starting training the model and then use the validation data for it
+                    data_collected = pd.read_csv(file_path)
+                    dataset_list.append(self.preprocessor.classical_machine_learning_data_extraction(data_collected))
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
+            complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
+            self.classical_model.classical_model_training(complete_set_of_training_data)
         else:
             raise "no files exist"
         
