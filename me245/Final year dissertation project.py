@@ -17,14 +17,10 @@ class DataLoader:
     """
     Handles loading, metadata extraction, and structural validation =,
     of financial datasets.
-    """
-    """
+    
     This class handles the basic data loading for all files to be read from the given file location from the user. It is effectively data preprocessing 1 
     as it is suppose to check if the files are valid and can be preprocessed by the ML project before it goes onto the stage 2 of data preprocessing.
-    """
     
-    
-    """
     hand in the data_set_path as a Path() type it is professional
     Flexibility: If you want to load 10 different datasets in a loop, you don't want to re-initialize the class every time. 
     You want one "Loader" that you can give different paths to.
@@ -38,7 +34,7 @@ class DataLoader:
         
         #now we must go through each file within the directory within the CSV_Files_training_unverified
         all_sub_directories = list(datasets_directory.glob("*.csv"))
-        if all_sub_directories is not None:
+        if all_sub_directories != []:
             #reading in all required files for the 
             print("Available CSV files training unverified to read from:\n")
             for file_path in all_sub_directories:
@@ -75,9 +71,6 @@ class DataLoader:
                 raise f"The following problem has occured: {e}."
         else:
             raise Exception("There aren't enough valid files for the model to be trained on (it must be at least 10).\n")
-            
-            
-            
         
     def file_validation(self,file_path):
         #this checks if the path to the file actually exists
@@ -239,7 +232,6 @@ class Preprocessor:
         # gaps do not appear in intraday data and are a classic anomaly signature.
         df['close_to_open_gap'] = (df['open'] - df['adjclose'].shift(1)) / df['adjclose'].shift(1)
 
-
         """Candlestick Wick Ratios (Upper & Lower Shadow)
         Upper shadow: how far the price was pushed above the open/close (based on which is higher) then is divided by the difference of the stock from its lowest compared to its highest.
         Lower shadow: how far the price was pushed below the open/close (based on which is lower) then is divided by the difference of the stock from its lowest compared to its highest.
@@ -319,7 +311,7 @@ class ClassicalModelManager:
         """
         self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)
     
-    def classical_model_training(self,train,val):
+    def classical_model_training(self,train):
         #Each time .fit() is called completely overwrites it previous training each time it is called so it needs to train all in one go
         self.isolation_forest.fit(train)
     
@@ -382,8 +374,11 @@ class MainControllerUI:
         datasets_directory = Path('me245/CSV_Files_training_verified')
         datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
         all_sub_directories = list(datasets_directory.glob("*.csv"))
-        complete_set_of_training_data
-        if all_sub_directories is not None:
+        #for data extraction and model training
+        if all_sub_directories != []:
+            print("="*60)
+            print("\n")
+            print("Training has started of the Isolation Forest model. Please wait...\n")
             #we need to recheck the files as the user might have moved them to the wrong location
             dataset_list = []
             for file_path in all_sub_directories:
@@ -395,8 +390,58 @@ class MainControllerUI:
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
             complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
             self.classical_model.classical_model_training(complete_set_of_training_data)
+            print("Training of the Isolation Forest model has been completed and predictions are now available\n")
+            print("="*60)
+            print("\n")
         else:
-            raise "no files exist"
+            raise "no files exist in the verified folder"
+        #the new directory we are now working with is the unseen one and we need to create a prediction for the one the user selects
+        datasets_directory = Path("me245/CSV_Files_unseen_dataset")
+        datasets_directory.mkdir(parents=True,exist_ok=True)
+        #need to collect all subdirectories again of files to present to user for selection
+        all_sub_directories = list(datasets_directory.glob("*.csv"))
+        user_wants_predictions = True
+        while(user_wants_predictions):
+            if all_sub_directories != []:
+                print("="*60)
+                print("\n")
+                print("Please select a file that you want to prediction for:")
+                for i,file_path in enumerate(all_sub_directories):
+                    #removes the file type at the end of the name. eg pdf for example
+                    if file_path.suffix == ".csv":
+                        print(f"Index: {i} File name: {file_path.stem}  File size: {file_path.stat().st_size / 1024:.2f}Kb   File type: {file_path.suffix}.\n")
+                while(True):
+                    try:
+                        user_index = int(input("Please enter the index of which file you would like to have predicted out of the ones allocated.\n"))
+                        if 0 <= user_index < len(all_sub_directories):
+                            break
+                    except:
+                        print("Please enter a valid input for the input\n")
+                if self.loader.file_validation(all_sub_directories[user_index]):
+                    print("The file is valid to make prediction\n")
+                    file_to_predict = pd.read_csv(all_sub_directories[user_index])
+                    extracted_predict_data = self.preprocessor.classical_machine_learning_data_extraction(file_to_predict)
+                    scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
+                    #insert interpretation of prediction function here
+                    print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
+                    
+                #check if the user wants to make another prediction using the code below
+                while(True):
+                    attempt_answer = input("Would you like to make another prediction?([y]es or [n]o).\n")
+                    if attempt_answer.lower() == 'n':
+                        user_wants_predictions = False
+                        break
+                    elif attempt_answer.lower() == 'y':
+                        break
+                    else:
+                        print("[y]es or [n]o are the only valid inputs please try again).\n")
+                print("="*60)
+                print("\n") 
+            else:
+                print("There are no files in the CSV_Files_unseen_dataset folder. Please enter a file in there that you want to predict before starting the model.\n")
+                print("="*60)
+                print("\n")
+                break
         
         
 ui =  MainControllerUI()
