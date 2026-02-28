@@ -213,88 +213,54 @@ class Preprocessor:
     
     def classical_machine_learning_data_extraction(self, df_data_to_extract):
         df = df_data_to_extract.copy()
-
-        # (high - low) / open — intraday movement relative to the opening price.
-        # Anomalies detected: flash crashes, short squeezes, and market manipulation
-        # (e.g. spoofing). These events produce extreme intraday swings even when
-        # the closing price appears superficially normal in isolation.
-        df['intraday_range'] = (df['high'] - df['low']) / df['open']
-
-        # Current volume divided by its 20-day rolling mean.
-        # Anomalies detected: insider trading (unusual volume before announcements),
-        # pump-and-dump schemes, panic selling/buying events, and earnings surprises.
-        # A ratio of 5x is far more informative than the raw volume figure alone.
-        df['volume_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
-
-        # (open_t - close_{t-1}) / close_{t-1} — the overnight price shock.
-        # Anomalies detected: earnings shocks, geopolitical events, regulatory
-        # announcements, M&A news, and black swan events. These information-driven
-        # gaps do not appear in intraday data and are a classic anomaly signature.
-        df['close_to_open_gap'] = (df['open'] - df['adjclose'].shift(1)) / df['adjclose'].shift(1)
-
-        """Candlestick Wick Ratios (Upper & Lower Shadow)
-        Upper shadow: how far the price was pushed above the open/close (based on which is higher) then is divided by the difference of the stock from its lowest compared to its highest.
-        Lower shadow: how far the price was pushed below the open/close (based on which is lower) then is divided by the difference of the stock from its lowest compared to its highest.
-        A large upper wick means buyers drove the price up but sellers forcefully sell leading to it going significantly lower comapared to a high point
-        A large lower wick means that a buyer sold his shares causing 
-        Unlike intraday_range which only captures total width, these capture where the
-        close landed within that range, revealing the directional intent behind the move.
-        Anomalies detected: failed pump-and-dump attempts  (which can cause a flash crash), spoofing(the buyer sells and sells all his shares causing other sellers to sell to drive the price down then a buyer
-        can buy them at a much lower price to drive the price up(this can cause a flash crash) if there is someone who can buy the shares afterwards)
-        capitulation events, and institutional accumulation/distribution."""
-        intraday_width = df['high'] - df['low']
-        df['upper_shadow'] = (df['high'] - df[['open', 'close']].max(axis=1)) / intraday_width
-        df['lower_shadow'] = (df[['open', 'close']].min(axis=1) - df['low']) / intraday_width
-
-        """The remaining OHLCV columns still need the same treatment — a raw data rate of change isn't consistent and not comparable across different stocks or price levels.
-        log_open_change   — captures sudden day-over-day open return in relaion to the previous day
-        log_high_change   — captures sudden day-over-day high return in relaion to the previous day
-        log_low_change    — captures sudden day-over-day low return in relaion to the previous day; captures consecutive lower lows signal sustained selling pressure and potential capitulation events.
-        log_volume_change — captures sudden day-over-day volume return in relaion to the previous day"""
-        df['log_open_change']   = np.log(df['open']   / df['open'].shift(1))
-        df['log_high_change']   = np.log(df['high']   / df['high'].shift(1))
-        df['log_low_change']    = np.log(df['low']    / df['low'].shift(1))
-        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1))
-        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
         
-        """Multi-Scale Rolling Volatility
-        Three windows give the model a volatility "regime" so it can distinguish
-        between a sustained volatile period and a sudden isolated spike.
-        Anomalies detected: systemic risk events (e.g. COVID crash, 2008 crisis), and short-lived shock events.
-        A 5-day spike inside a calm 20-day window is far more suspicious than the same spike during an already volatile period.
-        We also use use adjclose instead of the other Values due to adjclose is a much better measure than the rest of the raw values.
-        As it adjusts for stock splits and dividends; so a 2 to 1 split doesn't show up as a fake drop in your returns. So a split would cause massive outliers in the rest of the raw values in the dataset.
-        Also if we did apply it to high or low it would measure the volatility of the values as they can fluctuate highly through out a course of a set time period.
-        This helps identify flash crashes as if there is a sharp spike in a 5 day window and the 10 day/20day window doesn't pick it up significantly its then likely to be a flash crash. though it can also find other anomalies such as a gap down event"""
-        df['rolling_volatility_5d']  = df['log_adjclose_change'].rolling(window=5).std()
-        df['rolling_volatility_10d'] = df['log_adjclose_change'].rolling(window=10).std()
-        df['rolling_volatility_20d'] = df['log_adjclose_change'].rolling(window=20).std()
-
-
-        # Year is kept as a plain integer (not cyclical) — years are linear and do not
-        # wrap around. This allows the model to contextualise what is "normal" per year,
-        # e.g. a volatility spike normal in 2020 (COVID) may be anomalous in 2023.
+        #this can indicate sudden stock splits, indicate someone pumping and dumping, or potential insider training  build up if there is a sustained high volume diff
+        df['short_mid_diff_volume'] = df['volume'].rolling(6).mean() - df['volume'].rolling(3).mean()
+        df['short_long_diff_volume'] = df['volume'].rolling(12).mean() - df['volume'].rolling(3).mean()
+        
+        #checks the difference between windows to see if there is a crash edge case at the end of the day and sees if it is just a flash crash or a normal crash
+        df['short_mid_diff_adjclose'] = df['adjclose'].rolling(6).mean() - df['adjclose'].rolling(3).mean()
+        df['short_long_diff_adjclose'] = df['adjclose'].rolling(12).mean() - df['adjclose'].rolling(3).mean()
+        
+        #the percentage change from the previous day of the current value. for the HOCLV values
+        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
+        df['log_low_change'] = np.log(df['low'] / df['low'].shift(1))
+        df['log_high_change'] = np.log(df['high'] / df['high'].shift(1))
+        df['log_close_change'] = np.log(df['close'] / df['close'].shift(1))
+        df['log_open_change'] = np.log(df['open'] / df['open'].shift(1))
+        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1))
+        
+        #checks the difference between close and open against the open value.
+        #shift() returns the df but moves them back by + if you do -1 it moves them down by 1
+        df['difference_open_close'] = (df['open'] - df['close'])/df['open']
+        df['difference_high_low'] = (df['high'] - df['low'])/df['open']
+        #date extraction the isolation forest needs to tell if a number is normal for a time of year (1-12) for months
         df['date'] = pd.to_datetime(df['date'])
         df['year'] = df['date'].dt.year
-
-        # Sine/Cosine transforms for month so the model understands Dec (12) is
-        # adjacent to Jan (1) — months are cyclical, years are not.
-        df['month_sin'] = np.sin(2 * np.pi * df['date'].dt.month / 12)
-        df['month_cos'] = np.cos(2 * np.pi * df['date'].dt.month / 12)
-
-        # Date is not a numeric feature — keeping it risks data leakage
-        df = df.drop(columns=['date'])
-
-        # Shift and rolling windows introduce NaN at the head of the dataset.
-        # We do not impute — fabricating values would teach the model that
-        # stagnant flat periods are normal, reducing anomaly sensitivity.
-        df = df.dropna().reset_index(drop=True)
+        df['month'] = df['date'].dt.month
+        df['season'] = df['month'].copy().apply(self.extract_season)
+        df = df.drop(columns = ['date'])
         
-        #normalize all scales so that before data concatination all data is on the same scale and can see what is an outlier for the model
+        #we need to drop all data with missing columns
+        df = df.dropna(axis =0, how = 'any')#axis (1 is column 0 is row), how refers to what scenario to drop a collumn (all - all are missing and any - any values are missing), and no need to worry about threshold as there are 1000 datapoints per file
+        #add drop raw values
+        #normalize all scales so that before data concatination all data is on the same scale and can see what is an outlier for the model so no characters must be used in any feature
         df = (df - df.mean()) / df.std()
 
         return df
     
+    def extract_season(self,month):
+        #month is a numeriacal value
+        if month in [12,1,2]:
+            return 1
+        elif month in [3,4,5]:
+            return 2
+        elif month in [6,7,8]:
+            return 3
+        elif month in [9,10,11]:
+            return 4
+        
+        
 class ClassicalModelManager:
     def __init__(self, contamintion_input):
         # Contamination is the expected % of anomalies (e.g., 3%)
@@ -322,26 +288,33 @@ class ClassicalModelManager:
         prediction = self.isolation_forest.decision_function(unseen_data)
         return scores, prediction
 class Interpretation:
-    def representation_classical_model(self, scores, predictions,data_extracted, ticker_name):
+    def representation_classical_model(self, scores, predictions,data_extracted, path_name):
        
         # Add scores and labels to dataframe
         data_extracted['anomaly_score'] = predictions
         data_extracted['is_anomaly'] = scores
+        
+        #subplots returns two thing figure-the overall container and axes - the actual plot area where you draw things
+        figure, axis = plt.subplot(figsize=(14,5)) # width then height
+        #scatter call for normal points
+        axis.scatter(data_extracted.index,data_extracted['anomaly_score'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
+        #scatter call for anomaly points
+        axis.scatter(data_extracted.index,data_extracted['anomaly_score'] == -1,color = 'red',alpha = 1)#normal is +1 and an anomaly is -1
+        axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
+        axis.set_xlabel("anomaly index")#xaxis label, font size, font weight, font colour
+        axis.set_ylabel("anomaly score")
+        plt.tight_layout()#Prevents lables from being cut off
+        plt.savefig(path_name)#save figure to a file 
+        
+        
 
-        # --- Anomaly Score Distribution ---
-        _, ax = plt.subplots(figsize=(10, 5))
-        ax.hist(data_extracted[data_extracted['is_anomaly'] == 1]['anomaly_score'],
-                bins=50, color='steelblue', alpha=0.7, label='Normal')
-        ax.hist(data_extracted[data_extracted['is_anomaly'] == -1]['anomaly_score'],
-                bins=50, color='red', alpha=0.7, label='Anomaly')
-        ax.axvline(0, color='black', linewidth=1, linestyle='--', label='Threshold (0)')
-        ax.set_title(f'{ticker_name} — Anomaly Score Distribution')
-        ax.set_xlabel('Anomaly Score (lower = more anomalous)')
-        ax.set_ylabel('Number of Days')
-        ax.legend()
-        plt.tight_layout()
-        plt.show()
-
+    def anomaly_score_histogram(self):
+        #create anomaly distribution
+        plt.figure(figsize=(8,5),)
+        
+    def shap_and_lime_diagrams(self):
+        fgfg
+    
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
 manage and control the necessary logic for this project between the different subset of
