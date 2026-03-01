@@ -243,7 +243,8 @@ class Preprocessor:
         
         #we need to drop all data with missing columns
         df = df.dropna(axis =0, how = 'any')#axis (1 is column 0 is row), how refers to what scenario to drop a collumn (all - all are missing and any - any values are missing), and no need to worry about threshold as there are 1000 datapoints per file
-        #add drop raw values
+        #potential noise from raw values
+        df = df.drop(columns=['open', 'high', 'low', 'close', 'adjclose', 'volume'])
         #normalize all scales so that before data concatination all data is on the same scale and can see what is an outlier for the model so no characters must be used in any feature
         df = (df - df.mean()) / df.std()
 
@@ -279,7 +280,7 @@ class ClassicalModelManager:
     
     def classical_model_training(self,train):
         #Each time .fit() is called completely overwrites it previous training each time it is called so it needs to train all in one go
-        self.isolation_forest.fit(train)
+        self.isolation_forest.fit(train) #O(nlogn) time complexity for training
     
     def classical_model_prediction(self,unseen_data):
         #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
@@ -288,29 +289,44 @@ class ClassicalModelManager:
         prediction = self.isolation_forest.decision_function(unseen_data)
         return scores, prediction
 class Interpretation:
+    def interpretation_collection(self, scores, predictions,data_extracted, path_name):
+        self.anomaly_score_histogram( scores, predictions, path_name)
+        self.representation_classical_model( scores, predictions,data_extracted, path_name)
+        
     def representation_classical_model(self, scores, predictions,data_extracted, path_name):
        
         # Add scores and labels to dataframe
         data_extracted['anomaly_score'] = predictions
         data_extracted['is_anomaly'] = scores
-        
-        #subplots returns two thing figure-the overall container and axes - the actual plot area where you draw things
-        figure, axis = plt.subplot(figsize=(14,5)) # width then height
+        filtered_anomaly = data_extracted[data_extracted['is_anomaly'] == -1] #this line also keeps the corresponding rows index after the filter to make sure it matches with the dataextracted df
+        #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
+        figure, axis = plt.subplots(figsize=(14,5)) # width then height
         #scatter call for normal points
-        axis.scatter(data_extracted.index,data_extracted['anomaly_score'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
+        axis.scatter(data_extracted.index, data_extracted['anomaly_score'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
         #scatter call for anomaly points
-        axis.scatter(data_extracted.index,data_extracted['anomaly_score'] == -1,color = 'red',alpha = 1)#normal is +1 and an anomaly is -1
+        axis.scatter(filtered_anomaly.index, filtered_anomaly['anomaly_score'],color = 'red',alpha = 1)#normal is +1 and an anomaly is -1
         axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
         axis.set_xlabel("anomaly index")#xaxis label, font size, font weight, font colour
         axis.set_ylabel("anomaly score")
+        plt.title("Diagram of the varying anomaly scores against index occurance")
         plt.tight_layout()#Prevents lables from being cut off
         plt.savefig(path_name)#save figure to a file 
         
         
 
-    def anomaly_score_histogram(self):
-        #create anomaly distribution
-        plt.figure(figsize=(8,5),)
+    def anomaly_score_histogram(self,scores,predictions,path_name):
+        normal_scores = predictions[scores == 1]
+        anomaly_scores = predictions[scores == -1] #has to be -1 as thats the designation for anomalies
+        plt.figure(figsize=(14,5))
+        plt.hist([normal_scores,anomaly_scores],label = ["normal_data", "anomaly data"], color = ['skyblue', 'salmon'], alpha = 0.6)#datasets, bin -column width, labels(tuple or list), colour,edgecolor, alpha - transparancy
+        plt.axvline(x=0,color='black',linewidth = 1)#draws a verticle line to seperate the two datatypes for easier readability
+        plt.title("Histogram of normal data and anomaly data scores")
+        plt.ylabel("frequency")
+        plt.xlabel("anomaly_score")
+        plt.legend()
+        plt.tight_layout()#Prevents lables from being cut off
+        plt.savefig(path_name)#save figure to a file 
+        
         
     def shap_and_lime_diagrams(self):
         fgfg
@@ -373,6 +389,8 @@ class MainControllerUI:
         datasets_directory.mkdir(parents=True,exist_ok=True)
         #need to collect all subdirectories again of files to present to user for selection
         all_sub_directories = list(datasets_directory.glob("*.csv"))
+        prediction_outcome = Path("me245/File_of_outcomes")
+        prediction_outcome.mkdir(parents=True, exist_ok=True)
         user_wants_predictions = True
         while(user_wants_predictions):
             if all_sub_directories != []:
@@ -390,11 +408,13 @@ class MainControllerUI:
                             break
                     except:
                         print("Please enter a valid input for the input\n")
-                if self.loader.file_validation(all_sub_directories[user_index]):
+                file_selected = all_sub_directories[user_index]
+                if self.loader.file_validation(file_selected):
                     print("The file is valid to make prediction\n")
-                    file_to_predict = pd.read_csv(all_sub_directories[user_index])
+                    file_to_predict = pd.read_csv(file_selected)
                     extracted_predict_data = self.preprocessor.classical_machine_learning_data_extraction(file_to_predict)
                     scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
+                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,prediction_outcome / file_selected.stem  )
                     #insert interpretation of prediction function here
                     print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
                     
