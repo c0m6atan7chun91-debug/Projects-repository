@@ -215,12 +215,14 @@ class Preprocessor:
         df = df_data_to_extract.copy()
         
         #this can indicate sudden stock splits, indicate someone pumping and dumping, or potential insider training  build up if there is a sustained high volume diff
-        df['short_mid_diff_volume'] = df['volume'].rolling(6).mean() - df['volume'].rolling(3).mean()
-        df['short_long_diff_volume'] = df['volume'].rolling(12).mean() - df['volume'].rolling(3).mean()
+        minimum_rolling_window_volume = df['volume'].rolling(3).mean()
+        df['short_mid_diff_volume'] = df['volume'].rolling(6).mean() - minimum_rolling_window_volume
+        df['short_long_diff_volume'] = df['volume'].rolling(12).mean() - minimum_rolling_window_volume
         
         #checks the difference between windows to see if there is a crash edge case at the end of the day and sees if it is just a flash crash or a normal crash
-        df['short_mid_diff_adjclose'] = df['adjclose'].rolling(6).mean() - df['adjclose'].rolling(3).mean()
-        df['short_long_diff_adjclose'] = df['adjclose'].rolling(12).mean() - df['adjclose'].rolling(3).mean()
+        minimum_rolling_window_adjclose = df['adjclose'].rolling(3).mean()
+        df['short_mid_diff_adjclose'] = df['adjclose'].rolling(6).mean() - minimum_rolling_window_adjclose
+        df['short_long_diff_adjclose'] = df['adjclose'].rolling(12).mean() - minimum_rolling_window_adjclose
         
         #the percentage change from the previous day of the current value. for the HOCLV values
         df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1))

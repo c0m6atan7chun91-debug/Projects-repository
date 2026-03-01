@@ -110,4 +110,13 @@ while log returns for example would have the equation(log -assumed as base 10):
 log(Pt/P(t-1))
 example of application: Log(10/1) = 1, Log(20000/10) = 3.301 (3 D.P.), log(80/90) = -0.051 (3 D.P.)
 
-Based off of these calculations they clearly demonstrate how much it still shows significant outliers in relation to other data points but without having to use large numbers to quantify the difference. I then normalized the data so that it can further reduce the neumerical scaling difference as that can still be an issue
+Based off of these calculations they clearly demonstrate how much it still shows significant outliers in relation to other data points but without having to use large numbers to quantify the difference. I then normalized the data so that it can further reduce the neumerical scaling difference as that can still be an issue. 
+
+I also used my ideas and asked AI to initially generate its own version to see if there were ways of identifying the anomalies that I hadn't considered. There were it introduced intraday ratio, lower shadow and upper shadow as necessary features for me to understand. I will now need to study these features and gradually implement them.
+
+## Week 7 - 01/03/2026
+During this week I tried to see the outcome of a 80/20 split of Isolation Forest, when trained on a single dataset, this was unsuitable for the model to learn what was normal behaviour in the stock market. This was due to the insufficient variety in data given to the model leading it to flag outliers when none existed. In simpler terms it was returning false positives (flagging normal data points as anomalies) and false negatives (missing genuine anomalies) in the dataset, which is a characteristic of a poor model.
+
+This led to me coming to the solution to just data extract all the datasets given, which were no more than 50 (from diverse markets). I would then data extract them individually and store them into a list of dataframes that were extracted. Afterwards I would concatenate the dataframes together so that the model can train them all together. However, this results in a more generalized model, but is required if we want a model to be able to capture general anomalies in all markets rather than a stock specific one.
+
+I had also started working on the basic visualization of it through using a histogram and a another diagram using matlab in order to represent the results. Next week will be implementing SHAP and LIME to further represent the model. I will also start work on the deep learning model, this should be done in two weeks. After that fact I will need to collect data to represent my results and show it can infact detect it and restructure the UI class for a functional terminal interface.
