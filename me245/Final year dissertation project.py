@@ -8,8 +8,6 @@ import numpy as np
 import shutil
 from sklearn.ensemble import IsolationForest
 import shap
-import lime
-import lime.lime_tabular
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
 #p.s. remember to use camel case instead of PascalCase for java
@@ -211,7 +209,7 @@ class DataLoader:
             
 class Preprocessor:
     
-    def classical_machine_learning_data_extraction(self, df_data_to_extract):
+    def machine_learning_data_extraction(self, df_data_to_extract):
         df = df_data_to_extract.copy()
         
         #this can indicate sudden stock splits, indicate someone pumping and dumping, or potential insider training  build up if there is a sustained high volume diff
@@ -225,12 +223,13 @@ class Preprocessor:
         df['short_long_diff_adjclose'] = df['adjclose'].rolling(12).mean() - minimum_rolling_window_adjclose
         
         #the percentage change from the previous day of the current value. for the HOCLV values
-        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1))
-        df['log_low_change'] = np.log(df['low'] / df['low'].shift(1))
-        df['log_high_change'] = np.log(df['high'] / df['high'].shift(1))
-        df['log_close_change'] = np.log(df['close'] / df['close'].shift(1))
-        df['log_open_change'] = np.log(df['open'] / df['open'].shift(1))
-        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1))
+        # .clip(lower=1e-9) it replaces any value when it is below 0 with 0.000000001
+        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1).clip(lower=1e-9))
+        df['log_low_change'] = np.log(df['low'] / df['low'].shift(1).clip(lower=1e-9))
+        df['log_high_change'] = np.log(df['high'] / df['high'].shift(1).clip(lower=1e-9))
+        df['log_close_change'] = np.log(df['close'] / df['close'].shift(1).clip(lower=1e-9))
+        df['log_open_change'] = np.log(df['open'] / df['open'].shift(1).clip(lower=1e-9))
+        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1).clip(lower=1e-9))
         
         #checks the difference between close and open against the open value.
         #shift() returns the df but moves them back by + if you do -1 it moves them down by 1
@@ -291,9 +290,10 @@ class ClassicalModelManager:
         prediction = self.isolation_forest.decision_function(unseen_data)
         return scores, prediction
 class Interpretation:
-    def interpretation_collection(self, scores, predictions,data_extracted, path_name):
-        self.anomaly_score_histogram( scores, predictions, path_name)
-        self.representation_classical_model( scores, predictions,data_extracted, path_name)
+    def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
+        #with_name() allows me to change the name of the stem path
+        self.anomaly_score_histogram( scores, predictions, path_name / "histogram.png")
+        self.representation_classical_model( scores, predictions,data_extracted, path_name / "scatter.png")
         
     def representation_classical_model(self, scores, predictions,data_extracted, path_name):
        
@@ -330,8 +330,8 @@ class Interpretation:
         plt.savefig(path_name)#save figure to a file 
         
         
-    def shap_and_lime_diagrams(self):
-        fgfg
+    def shap_diagrams(self,isolation_forest_model, data_extracted):
+        shap.summary_plot()
     
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -411,12 +411,15 @@ class MainControllerUI:
                     except:
                         print("Please enter a valid input for the input\n")
                 file_selected = all_sub_directories[user_index]
+                #we need to call a directory the file_name to store the out come
+                asset_prediction = prediction_outcome / file_selected.stem
+                asset_prediction.mkdir(parents=True,exist_ok=True)
                 if self.loader.file_validation(file_selected):
                     print("The file is valid to make prediction\n")
                     file_to_predict = pd.read_csv(file_selected)
-                    extracted_predict_data = self.preprocessor.classical_machine_learning_data_extraction(file_to_predict)
+                    extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
                     scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
-                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,prediction_outcome / file_selected.stem  )
+                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,asset_prediction,self.classical_model)
                     #insert interpretation of prediction function here
                     print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
                     

@@ -120,3 +120,11 @@ During this week I tried to see the outcome of a 80/20 split of Isolation Forest
 This led to me coming to the solution to just data extract all the datasets given, which were no more than 50 (from diverse markets). I would then data extract them individually and store them into a list of dataframes that were extracted. Afterwards I would concatenate the dataframes together so that the model can train them all together. However, this results in a more generalized model, but is required if we want a model to be able to capture general anomalies in all markets rather than a stock specific one.
 
 I had also started working on the basic visualization of it through using a histogram and a another diagram using matlab in order to represent the results. Next week will be implementing SHAP and LIME to further represent the model. I will also start work on the deep learning model, this should be done in two weeks. After that fact I will need to collect data to represent my results and show it can infact detect it and restructure the UI class for a functional terminal interface.
+
+## Week 8 - 01/03/2026
+Fixed the path issue in interpretation_collection
+
+
+SHAP diagrams
+Deep learning pipeline - figured out how it works and what model is required
+Optional box plot at the end
