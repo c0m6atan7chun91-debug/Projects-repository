@@ -7,6 +7,10 @@ import time
 import numpy as np
 import shutil
 from sklearn.ensemble import IsolationForest
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
 import shap
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
@@ -289,6 +293,16 @@ class ClassicalModelManager:
         #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
         prediction = self.isolation_forest.decision_function(unseen_data)
         return scores, prediction
+    
+class Autoencoder(nn.Module):
+    def __init__(self):
+        super.__init__() # required to initialize the parent class
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
+        #not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
+        #Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
+        self.to(device)
+    def encoder(self):
+        mjnkjnkjnh
 class Interpretation:
     def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
         #with_name() allows me to change the name of the stem path

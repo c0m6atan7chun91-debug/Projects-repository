@@ -96,7 +96,7 @@ This is vital because market volatility is often seasonal; for example, energy o
 link for reading: https://medium.com/data-science/make-your-machine-learning-model-work-better-with-datetime-features-eb21de397fe8
 
 
-<mark>I have been keeping a log!!! Just forgotten to put it into the correct directory so it has now been commited. If you want verification my professor has seen this in the interview before I had made the commit this includes Dr Crole</mark>
+<mark>I have been keeping a log!!! Just forgotten to put it into the correct directory so it has now been commited. If you want verification my professor has seen this in the interview before I had made the commit this includes Dr Crole. It is also much shorter in previous weeks as it was building the research foundation required to efficiently complete this project.</mark>
 
 ## Week 6 - 22/02/26
 
@@ -119,12 +119,37 @@ During this week I tried to see the outcome of a 80/20 split of Isolation Forest
 
 This led to me coming to the solution to just data extract all the datasets given, which were no more than 50 (from diverse markets). I would then data extract them individually and store them into a list of dataframes that were extracted. Afterwards I would concatenate the dataframes together so that the model can train them all together. However, this results in a more generalized model, but is required if we want a model to be able to capture general anomalies in all markets rather than a stock specific one.
 
-I had also started working on the basic visualization of it through using a histogram and a another diagram using matlab in order to represent the results. Next week will be implementing SHAP and LIME to further represent the model. I will also start work on the deep learning model, this should be done in two weeks. After that fact I will need to collect data to represent my results and show it can infact detect it and restructure the UI class for a functional terminal interface.
+I had also started working on the basic visualization of it through using a histogram and a another diagram using matplotlib in order to represent the results. Next week will be implementing SHAP and LIME to further represent the model. I will also start work on the deep learning model, this should be done in two weeks. After that fact I will need to collect data to represent my results and show it can infact detect it and restructure the UI class for a functional terminal interface.
 
-## Week 8 - 01/03/2026
-Fixed the path issue in interpretation_collection
+## Week 8 - 08/03/2026
+
+In this week I have managed to fix the interpretation pathing for my interpretation class of my project. This is so that the user can have dedicate folder outcomes named after the users file that they wanted to have predictions for. This gives the user a better method of being able to find and handle the software.
+
+I have had a discussion with my personal supervisor on the diagrams that I had developed and what they mean to the user (such as the histogram and scatter graph). The histogram is to make sure that the software is performing at the 1% significance level of finding outliers (anomalies) within datasets. The scatter graph gives you a visual representation and shows that there are patterns within the stock market data anomalies. This pattern shows that there is correlation within the features that I have used when finding outliers between them. This is positive as it shows I have sucessfully extracted data and reduced the noise from the raw dataset. This is something that I can and will talk about in my dissertation.
+
+I have also done research this week to see how can potentially explore how to find correlating patterns in stock markets using machine learning. My previous background research that I did in weeks 1-4. Point towards using deep-learning methods of ML rather than classical methods of ML. As the deep-learning partitions the dataset into fragements to be processed before hand which enables it to find slight differences within the dataset as it is comparing points from just a segment of data rather than the entire dataset which is what classical machine learning methods use. This lead to me looking into different methods to solve the problem as I don't know what is the best solution from my limited knowledge.
+
+The 2 types of deep-learing that I had considered was the self-attention mechanism from the transformers. As it allows it to weigh each other point against each other and see if there is a positive correlation between them (through using dot product) and it also allows it to understand how each point is relative to one another temporally.However, the problem is that it detects patterns even well known ones to the user. So the user would have to manually decipher whether or not the correlation is an anomaly or not.
+
+ The second type of deep learning I had considered was autoencoders, as they are well known for finding anomalies within data. This is executed through training a NN to be able to reconstruct the data accurately. This is done by using a loss function to be able to tell the difference between the output and the input for the autoencoder. If the difference between the two is significant then it will be flagged as an anomaly. This is why you would ideally want to train deep learning on significantly more amount of data than classical ML. As otherwise without significant amounts of training data it will not understand what is considered normal behaviour from the financial market.
+
+ I also looked into SHAP and LIME documentation. This showed that I didn't really need LIME anymore. SHAP can do the exact same representation as LIME but with better accuracy. This is important as we want to know accurately how much each feature helps to find anomalies within the dataset. As we are already approximating what is an anomaly to the user.
+
+ At the end of the week I had also constructed a plan to create a dissertation from parts of my interem report. I also decided what changes that would be needed from the interem report for it to be suitably applied in the dissertation report. It will be structured as introduction, Survey of literature, Design, Implementation, Testing, and critical appraisal.
+
+## Week 9 - 15/03/2026
+
+This week I reviewed previous project write ups that I have done for other projects to see how I could potentially improve my structure of the dissertation so it can flow well when read and clearly communicate why it was implemented as such. I also created a short list of things I could currently criticize on the project. Such as how much lack of understanding in unsupervised machine learning lead to changes within my project timeline and how this has affected my implementation. I am also going to talk about how it has changed my objectives slightly over time due to my lack of understanding at the time. 
+
+I am also creating a new timeline for myself. This one aims for me to be completed by April the 19th. Including the write up. After that I will be spending the rest of my time creating a presentation for the interview and explain what I had going on in my project and be able to present it to the supervisor and principal marker.
+
+I have also made plans to be able to catch up on the writing on my dissertation for the next few weeks. My aim is to remake parts of the introduction and to further develop my survey of literature. I also plan the week after to finish the survey of literature section and start to further develop my design section. Once I am writing the design section my plan is to code up the autoencoder class and the class that manages the autoencoder and create interpretations of it. (The testing of this development will be included in the testing section of my report and will align with the requirements).
+
+I had to take a break this week like many students; I was experiencing burnout as there isn't much space for breaks within this stage of the degree. So it was a suitable idea so I am able to continue working into April. If you think I could have started in December I couldn't as I was ill for most of the time off we had then.
+
+## Week 10 - 
 
 
 SHAP diagrams
-Deep learning pipeline - figured out how it works and what model is required
+Deep learning pipeline - using MSE and autoencoders
 Optional box plot at the end
