@@ -341,22 +341,60 @@ class Autoencoder(nn.Module):
         return decoded
     
 #I have made the AutoencoderModelManager class myself
-#the training_loop was developed using the inpiration from a tutorial: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s
+#the training_loop was developed using the inpiration from a tutorial and some details are similar: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s
 class AutoencoderModelManager():
     def __init__(self):
         self.autoencoder_model = Autoencoder() #Establish the model we use to execute said calculations
         self.criterion = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder, so it is the criterion
         self.optimization = torch.optim.Adam(self.autoencoder_model.parameters(), lr = 0.001) #this updates the weights based on the learning rate which controls how much these weights are updated by. Also, self.autoencoder_model.parameters() directs which weights to update for the ML algorithm and lr is in reference to lr
+        #Adam seems to be the best optimizer based from this source: https://www.geeksforgeeks.org/deep-learning/adam-optimizer/
         
     def training_loop(self, sequences):
         #A sequence is how many 60 day sliding windows we can recreate from a given training dataset
         #An epoch is how many times the model goes over a training dataset during training (forward and backwards (backwards is to check the weights and see if they need to be changed))
-        for epoch in range(1000):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #keep it out of the loop as we don't want to create it each loop.
+        for epoch in range(100):
             for sequence in sequences:
                 #do the forward then backward pass of the loop and update the weights
-                self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
+                input_vector_sequence = sequence.reshape(-1,900).to(device) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
+                reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
+                loss = self.criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
                 
-                self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It does this by using chain rule to see the differences.
+                self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
+                loss.backward()#Go back across the dataset using chain rule to check the derivatives and see how the loss function to see the d loss/ d Weight for the gradient of the loss against the weight function.
+                self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It then uses the gradient as such: weight - lr * gradient.
+            print(f"Epoch: {epoch + 1 }, Loss: {loss.item():.4f}") #loss is the difference between the constructed and reconstructed output
+    
+    #This loop was made entirely without tutorials
+    def prediction(self,sequences):
+        '''
+        To understand what makes an anomaly in this case we will have to look at how the model is trained. It needs to be trained on a large pool of data to understand what is considered a normal dataset.
+        So assuming it has learned what is a normal behaviour from that; datasets that are entered should have "normal" periods to the anomaly detection system. So if it cannot be recreated then it must be an extreme outlier compared to what is normal market data.
+        So if a sequence is above the mean of the loss and 2 times more than standard deviations summed up in a one tailed test then it is an anomaly.
+        It is using a one tailed test as you can't get an error below zero has MSE uses the square difference.
+        '''
+        list_of_loss_values = [] #append tuples of the starting index which is another scale relative to the actual date
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #keep it out of the loop as we don't want to create it each loop.
+        self.autoencoder_model.eval() #this sets the model into evaluation mode. It disables dropout and batch normalization layers
+        #Ensures that it stops making a computation graph during a forward pass. So it doesn't take up more memory.
+        with torch.no_grad():
+            for sequence in sequences:
+                input_vector_sequence = sequence.reshape(-1,900).to(device) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
+                reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
+                loss = self.criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
+                list_of_loss_values.append(loss.item())
+                
+            #Now we have the list of loss values and each index is corresponding to the date it starts at from the df and dataset it is from
+            #convert it to a torch temporarily to a tensor. This is becuase Tensors build off of the numpy extension meaning their sizes are fixed
+            tensor_of_loss_values = torch.tensor(list_of_loss_values)
+            mean_loss = tensor_of_loss_values.mean() #returns a tensor
+            std_loss = tensor_of_loss_values.std() #return a tensor  so need to use .item() to return it
+            #This is where I found the measuremetn of a 99% confidence interval for a one tailed test: https://stats.libretexts.org/Bookshelves/Introductory_Statistics/Statistics_with_Technology_2e_(Kozak)/12%3A_Appendix-_Critical_Value_Tables/12.02%3A_Normal_Critical_Values_for_Confidence_Levels
+            #so you use the 98% confidence interval (which is for two tail tests) as we are using one tail it will cover 99% of the population so it is 2.33 std away from the mean
+            list_of_loss_values_and_dates = [[value,i] for i, value in enumerate(list_of_loss_values) if value > 2.33* std_loss.item() + mean_loss.item()]
+            return list_of_loss_values_and_dates
+        
+        
                 
         
         
@@ -512,8 +550,87 @@ class MainControllerUI:
                 print("\n")
                 break
     
-    def start_deep_learning_model():
-        pass
+    def start_deep_learning_model(self):
+        self.loader.load_and_validate_dataset()
+        #convert the input string input into a path object        
+        datasets_directory = Path('me245/CSV_Files_training_verified')
+        datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
+        all_sub_directories = list(datasets_directory.glob("*.csv"))
+        #for data extraction and model training
+        if all_sub_directories != []:
+            print("="*60)
+            print("\n")
+            print("Training has started of the Isolation Forest model. Please wait...\n")
+            #we need to recheck the files as the user might have moved them to the wrong location
+            dataset_list = []
+            for file_path in all_sub_directories:
+                if self.loader.file_validation(file_path):
+                    data_collected = pd.read_csv(file_path)
+                    dataset_list.append(self.preprocessor.extract_season(data_collected))
+                else:
+                    shutil.move(file_path, datasets_directory_unverfied / file_path.name)
+                    raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
+            complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
+            self.classical_model.classical_model_training(complete_set_of_training_data)
+            print("Training of the Isolation Forest model has been completed and predictions are now available\n")
+            print("="*60)
+            print("\n")
+        else:
+            raise "no files exist in the verified folder"
+        #the new directory we are now working with is the unseen one and we need to create a prediction for the one the user selects
+        datasets_directory = Path("me245/CSV_Files_unseen_dataset")
+        datasets_directory.mkdir(parents=True,exist_ok=True)
+        #need to collect all subdirectories again of files to present to user for selection
+        all_sub_directories = list(datasets_directory.glob("*.csv"))
+        prediction_outcome = Path("me245/File_of_outcomes")
+        prediction_outcome.mkdir(parents=True, exist_ok=True)
+        user_wants_predictions = True
+        while(user_wants_predictions):
+            if all_sub_directories != []:
+                print("="*60)
+                print("\n")
+                print("Please select a file that you want to prediction for:")
+                for i,file_path in enumerate(all_sub_directories):
+                    #removes the file type at the end of the name. eg pdf for example
+                    if file_path.suffix == ".csv":
+                        print(f"Index: {i} File name: {file_path.stem}  File size: {file_path.stat().st_size / 1024:.2f}Kb   File type: {file_path.suffix}.\n")
+                while(True):
+                    try:
+                        user_index = int(input("Please enter the index of which file you would like to have predicted out of the ones allocated.\n"))
+                        if 0 <= user_index < len(all_sub_directories):
+                            break
+                    except:
+                        print("Please enter a valid input for the input\n")
+                file_selected = all_sub_directories[user_index]
+                #we need to call a directory the file_name to store the out come
+                asset_prediction = prediction_outcome / file_selected.stem
+                asset_prediction.mkdir(parents=True,exist_ok=True)
+                if self.loader.file_validation(file_selected):
+                    print("The file is valid to make prediction\n")
+                    file_to_predict = pd.read_csv(file_selected)
+                    extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
+                    scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
+                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,asset_prediction,self.classical_model)
+                    #insert interpretation of prediction function here
+                    print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
+                    
+                #check if the user wants to make another prediction using the code below
+                while(True):
+                    attempt_answer = input("Would you like to make another prediction?([y]es or [n]o).\n")
+                    if attempt_answer.lower() == 'n':
+                        user_wants_predictions = False
+                        break
+                    elif attempt_answer.lower() == 'y':
+                        break
+                    else:
+                        print("[y]es or [n]o are the only valid inputs please try again).\n")
+                print("="*60)
+                print("\n") 
+            else:
+                print("There are no files in the CSV_Files_unseen_dataset folder. Please enter a file in there that you want to predict before starting the model.\n")
+                print("="*60)
+                print("\n")
+                break
         
         
 ui =  MainControllerUI()
