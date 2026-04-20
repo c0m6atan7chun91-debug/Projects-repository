@@ -257,6 +257,16 @@ class Preprocessor:
         elif month in [9,10,11]:
             return 4
         
+    def create_sequences(self,dataset_extracted ,window_size = 60):
+        #Each window will be 60 days and a list of individual tensors will store these said windows
+        #Also df headers are removed when coverted to numpy so there is no need to worry about removing them. I had to check online.
+        #The torch.tensor converts the numpy array (previously a df) to a tensor while maintaining its shape and columns
+        #There is no need to worry about having no titles as the extracted datasets are always created in the same order
+        list_of_tensor_sequences = []
+        for starting_datapoint in range(len(dataset_extracted) - window_size):
+            list_of_tensor_sequences.append(torch.tensor(dataset_extracted[starting_datapoint:starting_datapoint + window_size]))
+        return list_of_tensor_sequences
+        
         
 class ClassicalModelManager:
     def __init__(self, contamintion_input):
@@ -331,14 +341,23 @@ class Autoencoder(nn.Module):
         return decoded
     
 #I have made the AutoencoderModelManager class myself
+#the training_loop was developed using the inpiration from a tutorial: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s
 class AutoencoderModelManager():
     def __init__(self):
-        self.autoencoder_model = Autoencoder()
-        self.mean_square_error_loss_function = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder
+        self.autoencoder_model = Autoencoder() #Establish the model we use to execute said calculations
+        self.criterion = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder, so it is the criterion
         self.optimization = torch.optim.Adam(self.autoencoder_model.parameters(), lr = 0.001) #this updates the weights based on the learning rate which controls how much these weights are updated by. Also, self.autoencoder_model.parameters() directs which weights to update for the ML algorithm and lr is in reference to lr
         
-    def training_loop(self):
-        pass
+    def training_loop(self, sequences):
+        #A sequence is how many 60 day sliding windows we can recreate from a given training dataset
+        #An epoch is how many times the model goes over a training dataset during training (forward and backwards (backwards is to check the weights and see if they need to be changed))
+        for epoch in range(1000):
+            for sequence in sequences:
+                #do the forward then backward pass of the loop and update the weights
+                self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
+                
+                self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It does this by using chain rule to see the differences.
+                
         
         
 class Interpretation:
@@ -427,7 +446,7 @@ class MainControllerUI:
             for file_path in all_sub_directories:
                 if self.loader.file_validation(file_path):
                     data_collected = pd.read_csv(file_path)
-                    dataset_list.append(self.preprocessor.classical_machine_learning_data_extraction(data_collected))
+                    dataset_list.append(self.preprocessor.extract_season(data_collected))
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
