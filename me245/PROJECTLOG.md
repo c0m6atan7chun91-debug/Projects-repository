@@ -162,6 +162,12 @@ Though I had some spare time to see how Lags worked into autocorrelation pattern
 ## Week 12 - 05/04/2026
 I had to take the week off to rest up after submitting my last piece of group course work on the 30th of March this week as I am burntout from overloaded work. I have also acknowledged arising health issues from doctors.
 
+## Week 13 - 12/04/2025
+I have finished the introduction of my dissertation writing, and I have started my dissertation's literature survey.
+
+## Week 14 - 19/04/2025
+The literature survey is finished, which is the longest section to complete.
+
 
 SHAP diagrams
 Deep learning pipeline - using MSE and autoencoders

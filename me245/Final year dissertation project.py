@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 import numpy as np
 from pathlib import Path
 import yfinance as yf
@@ -10,7 +9,6 @@ from sklearn.ensemble import IsolationForest
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 import shap
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
@@ -121,7 +119,7 @@ class DataLoader:
     def create_stock_market_dataset(self):
         #WARNING DO NOT USE SESSION FROM IMPORT REQUEST OTHERWISE THIS WILL NOT WORK YFINANCE HAS A IMBUILT SYSTEM RELYING ON curl_cffi backend
         #to reduce throttling of the print function break it down into sub print statements. As it can lead to lines disappearing due to too much concaternation.
-        print("="*60)
+        print("="*60 + '\n')
         print("SYSTEM NOTICE: Yahoo Finance API Ingestion Engine")
         print("-" * 60)
         print("1. RATE LIMITS: Do not request the same ticker twice per minute.")
@@ -147,24 +145,16 @@ class DataLoader:
                     for name_of_market in list_of_market_names:
                         data = yf.download(name_of_market,start_date_dataset,end_date_dataset,auto_adjust=False)
                         
-                        if not data.empty:
+                        if len(data) > 0:
                             print(data)
-                            
                             #Flatten the MultiIndex headers as they are tuples e.g.('adjclose','comapanyname')
-                            data.columns = [col[0].lower() for col in data.columns]
+                            data = data.reset_index()
+                            data.columns = data[0].str.lower()
                             
                             #STANDARDIZE THE COLUMNS (Lowercase and remove spaces for validation logic) which moves date as a column instead of index
-                            data.reset_index()
                             data.columns = [str(col).lower().replace(' ', '') for col in data.columns]
-                            
-                            print(data)
-                            # Reset index to get 'Date' as a column so the indexs are numbers not the actual dates themselves
-                            if 'date' not in data.columns:
-                                data = data.reset_index()
-                                # Standardize again because 'Date' was just added
-                                data.columns = [str(col).lower().replace(' ', '') for col in data.columns]
                         
-                            print(f"Success! Captured {len(data)} rows.")
+                            print(f"The data that has been requested has been successfully retrieved! {len(data)} rows in the dataset!")
                             
                             #check if a folder exists and define it
                             directory = Path("me245/CSV_Files_training_unverified")
@@ -207,6 +197,7 @@ class DataLoader:
                         else:
                             print("[y]es or [n]o are the only valid inputs please try again.)\n")
         except Exception as WANerror:
+            #to catch network errors
             raise Exception(f"Session with Yahoo finance could not be created due to {WANerror}.")
         finally:
             print("="*60)
@@ -227,7 +218,7 @@ class Preprocessor:
         df['short_long_diff_adjclose'] = df['adjclose'].rolling(12).mean() - minimum_rolling_window_adjclose
         
         #the percentage change from the previous day of the current value. for the HOCLV values
-        # .clip(lower=1e-9) it replaces any value when it is below 0 with 0.000000001
+        # .clip(lower=1e-9) it replaces any value when it is below 0 with 0.000000001 to avoid division by 0 errors
         df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1).clip(lower=1e-9))
         df['log_low_change'] = np.log(df['low'] / df['low'].shift(1).clip(lower=1e-9))
         df['log_high_change'] = np.log(df['high'] / df['high'].shift(1).clip(lower=1e-9))
@@ -294,15 +285,62 @@ class ClassicalModelManager:
         prediction = self.isolation_forest.decision_function(unseen_data)
         return scores, prediction
     
+'''
+The autoencoder class was developed using the help of a tutorial: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s and https://www.youtube.com/watch?v=VVDHU_TWwUg
+It only was used to establish syntax and theory in regarding the coding side of pytorch. I still had to change this section with my own theory and found syntax to the project. I also applied some syntax it taught in said video to the AutoencoderModelManager class
+We want to inherit from the NN class as it gives us access to the Mean Squared error loss function for example so that we don't need to define these functions ourselfs
+'''
 class Autoencoder(nn.Module):
     def __init__(self):
-        super.__init__() # required to initialize the parent class
+        super().__init__() # required to initialize the parent class that is nn to use its functions
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
-        #not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
+        #Not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
         #Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
         self.to(device)
-    def encoder(self):
-        mjnkjnkjnh
+        
+        
+        #Define the NN layers for the autoencoder
+        '''
+        we have 15 features and have 60 data points being entered into the dataset
+        So the linear layer also known as the input layer will be condensing our input features into the NN
+        60 days to cover a quater of the year and each day has 15 features that has been extracted from it so 60*15 = 900 features to enter the neural network
+        
+        As there is a tanh function it will only output values between 1 and -1, which is suitable for normalized datasets
+        '''
+        #Define the encoder:
+        self.encoder = nn.Sequential(
+            nn.Linear(900,90),#input layer so 900 represents the total features and 90 represents the vector it gets compressed into for the next input space
+            nn.Tanh(),#activation function
+            nn.Linear(90,45),#hidden layer
+            nn.Tanh()#activation function at this point there are 60 samples having its features compressed into 45 values in a input space
+            #Don't use the ReLU to allow negative values from the normalization. If I used ReLU function there will be no negative values to return so it will destroy performance.
+            #You should use Tanh as it maps the values between -1 and 1 which is slightly smaller scale than a normalized dataset but still would get the model to learn the fundermental patterns. Using a adjusted scale.
+        )
+        
+        
+        #For the decoder it needs to do the reverse operations of the encoder to recreate the dataset
+        self.decoder = nn.Sequential(
+            nn.Linear(45,90),#hidden layer
+            nn.Tanh(),
+            nn.Linear(90,900)#output layer and no activation function required as the raw output should be the normalized values limiting it between 1 and -1 would skew the MSEs evaluation of the output
+        )
+        
+    def forward(self,x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+    
+#I have made the AutoencoderModelManager class myself
+class AutoencoderModelManager():
+    def __init__(self):
+        self.autoencoder_model = Autoencoder()
+        self.mean_square_error_loss_function = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder
+        self.optimization = torch.optim.Adam(self.autoencoder_model.parameters(), lr = 0.001) #this updates the weights based on the learning rate which controls how much these weights are updated by. Also, self.autoencoder_model.parameters() directs which weights to update for the ML algorithm and lr is in reference to lr
+        
+    def training_loop(self):
+        pass
+        
+        
 class Interpretation:
     def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
         #with_name() allows me to change the name of the stem path
@@ -454,6 +492,9 @@ class MainControllerUI:
                 print("="*60)
                 print("\n")
                 break
+    
+    def start_deep_learning_model():
+        pass
         
         
 ui =  MainControllerUI()
