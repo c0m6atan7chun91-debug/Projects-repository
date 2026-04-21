@@ -201,6 +201,26 @@ class DataLoader:
             raise Exception(f"Session with Yahoo finance could not be created due to {WANerror}.")
         finally:
             print("="*60)
+    
+    #proceedure
+    def reset_file_validation(self):
+        #move all files from validation on boot up
+        datasets_directory = Path('me245/CSV_Files_training_verified')
+        datasets_directory.mkdir(parents=True,exist_ok=True)
+        all_sub_directories = list(datasets_directory.glob("*.csv"))
+        
+        #now reuse the same variable as it isn't needed again
+        datasets_directory = Path('me245/CSV_Files_training_unverified')
+        datasets_directory.mkdir(parents=True,exist_ok=True)
+        try:
+            #copy the files that are .csv into the folder which is unverified
+            for file in all_sub_directories:
+                #need to copy each file from the verified folder
+                print()
+                shutil.move(file, datasets_directory / file.name)
+        except Exception as e:
+            raise f"The following problem has occured: {e}."
+        
             
 class Preprocessor:
     
@@ -264,7 +284,7 @@ class Preprocessor:
         #There is no need to worry about having no titles as the extracted datasets are always created in the same order
         list_of_tensor_sequences = []
         for starting_datapoint in range(len(dataset_extracted) - window_size):
-            list_of_tensor_sequences.append(torch.tensor(dataset_extracted[starting_datapoint:starting_datapoint + window_size]))
+            list_of_tensor_sequences.append(torch.tensor(dataset_extracted[starting_datapoint:starting_datapoint + window_size].values))# needs .values to extract the valuesn
         return list_of_tensor_sequences
         
         
@@ -306,7 +326,6 @@ class Autoencoder(nn.Module):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
         #Not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
         #Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
-        self.to(device)
         
         
         #Define the NN layers for the autoencoder
@@ -334,6 +353,7 @@ class Autoencoder(nn.Module):
             nn.Tanh(),
             nn.Linear(90,900)#output layer and no activation function required as the raw output should be the normalized values limiting it between 1 and -1 would skew the MSEs evaluation of the output
         )
+        self.to(device)
         
     def forward(self,x):
         encoded = self.encoder(x)
@@ -451,6 +471,11 @@ class MainControllerUI:
         self.loader = DataLoader()
         self.preprocessor = Preprocessor()
         self.classical_model = ClassicalModelManager(0.01)
+        self.deep_learning_model_manager = AutoencoderModelManager()
+        
+        
+        
+        
         self.interprebility = Interpretation()
         self.data_loaded = []
     def start(self):
@@ -484,7 +509,7 @@ class MainControllerUI:
             for file_path in all_sub_directories:
                 if self.loader.file_validation(file_path):
                     data_collected = pd.read_csv(file_path)
-                    dataset_list.append(self.preprocessor.extract_season(data_collected))
+                    dataset_list.append(self.preprocessor.machine_learning_data_extraction(data_collected))
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
@@ -551,7 +576,12 @@ class MainControllerUI:
                 break
     
     def start_deep_learning_model(self):
-        self.loader.load_and_validate_dataset()
+        #we need to check if the files are valid again in case of changes
+        self.loader.reset_file_validation()
+        self.loader.load_and_validate_dataset()#check if the datasets are valid in the unverified folder
+        
+        
+        
         #convert the input string input into a path object        
         datasets_directory = Path('me245/CSV_Files_training_verified')
         datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
@@ -560,23 +590,41 @@ class MainControllerUI:
         if all_sub_directories != []:
             print("="*60)
             print("\n")
-            print("Training has started of the Isolation Forest model. Please wait...\n")
+            print("Training has started of the autoencoder model. Please wait...\n")
             #we need to recheck the files as the user might have moved them to the wrong location
+            #this is where we execute the data
             dataset_list = []
             for file_path in all_sub_directories:
                 if self.loader.file_validation(file_path):
                     data_collected = pd.read_csv(file_path)
-                    dataset_list.append(self.preprocessor.extract_season(data_collected))
+                    dataset_list.append(self.preprocessor.machine_learning_data_extraction(data_collected))
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
-            complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
-            self.classical_model.classical_model_training(complete_set_of_training_data)
+                
+            #here you change the training dataset as you can't just combine them together
+            
+            
+            #loop for deep model training
+            for dataset_preprocessed in dataset_list:
+                list_of_sequences = self.preprocessor.create_sequences(dataset_preprocessed)
+                self.deep_learning_model_manager.training_loop(list_of_sequences)
+                
+                
+            
+            
+            
             print("Training of the Isolation Forest model has been completed and predictions are now available\n")
             print("="*60)
             print("\n")
         else:
             raise "no files exist in the verified folder"
+        
+        
+        
+        
+        
+        
         #the new directory we are now working with is the unseen one and we need to create a prediction for the one the user selects
         datasets_directory = Path("me245/CSV_Files_unseen_dataset")
         datasets_directory.mkdir(parents=True,exist_ok=True)
@@ -608,9 +656,23 @@ class MainControllerUI:
                 if self.loader.file_validation(file_selected):
                     print("The file is valid to make prediction\n")
                     file_to_predict = pd.read_csv(file_selected)
+                    
+                    
+                    
+                    #so we need to extract the predicted data and then create the predictions that it recieves
+                    
+                    
+                    
                     extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
-                    scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
-                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,asset_prediction,self.classical_model)
+                    list_of_loss_values_and_dates = self.deep_learning_model_manager.prediction(extracted_predict_data)
+                    print(list_of_loss_values_and_dates)
+                    
+                    
+                    
+                    
+                    
+                    
+                    
                     #insert interpretation of prediction function here
                     print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
                     
@@ -636,4 +698,5 @@ class MainControllerUI:
 ui =  MainControllerUI()
 ui.copyright_disclaimer()
 ui.start()
-ui.start_classical_model()
+ui.start_deep_learning_model()
+#ui.start_classical_model()S
