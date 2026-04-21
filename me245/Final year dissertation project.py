@@ -12,6 +12,15 @@ import torch.optim as optim
 import shap
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
+
+
+device = torch.device('cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
+#Not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
+#Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
+#It is defined up here as multiple classes need it
+
+
+
 #p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
     """
@@ -239,17 +248,17 @@ class Preprocessor:
         
         #the percentage change from the previous day of the current value. for the HOCLV values
         # .clip(lower=1e-9) it replaces any value when it is below 0 with 0.000000001 to avoid division by 0 errors
-        df['log_adjclose_change'] = np.log(df['adjclose'] / df['adjclose'].shift(1).clip(lower=1e-9))
-        df['log_low_change'] = np.log(df['low'] / df['low'].shift(1).clip(lower=1e-9))
-        df['log_high_change'] = np.log(df['high'] / df['high'].shift(1).clip(lower=1e-9))
-        df['log_close_change'] = np.log(df['close'] / df['close'].shift(1).clip(lower=1e-9))
-        df['log_open_change'] = np.log(df['open'] / df['open'].shift(1).clip(lower=1e-9))
-        df['log_volume_change'] = np.log(df['volume'] / df['volume'].shift(1).clip(lower=1e-9))
+        df['log_adjclose_change'] = np.log(df['adjclose'].clip(lower=1e-9) / df['adjclose'].shift(1).clip(lower=1e-9))
+        df['log_low_change'] = np.log(df['low'].clip(lower=1e-9) / df['low'].shift(1).clip(lower=1e-9))
+        df['log_high_change'] = np.log(df['high'].clip(lower=1e-9) / df['high'].shift(1).clip(lower=1e-9))
+        df['log_close_change'] = np.log(df['close'].clip(lower=1e-9) / df['close'].shift(1).clip(lower=1e-9))
+        df['log_open_change'] = np.log(df['open'].clip(lower=1e-9) / df['open'].shift(1).clip(lower=1e-9))
+        df['log_volume_change'] = np.log(df['volume'].clip(lower=1e-9) / df['volume'].shift(1).clip(lower=1e-9))
         
         #checks the difference between close and open against the open value.
         #shift() returns the df but moves them back by + if you do -1 it moves them down by 1
-        df['difference_open_close'] = (df['open'] - df['close'])/df['open']
-        df['difference_high_low'] = (df['high'] - df['low'])/df['open']
+        df['difference_open_close'] = ((df['open'] - df['close'])/df['open']).clip(lower=1e-9)
+        df['difference_high_low'] = ((df['high'] - df['low'])/df['open']).clip(lower=1e-9)
         #date extraction the isolation forest needs to tell if a number is normal for a time of year (1-12) for months
         df['date'] = pd.to_datetime(df['date'])
         df['year'] = df['date'].dt.year
@@ -263,7 +272,8 @@ class Preprocessor:
         df = df.drop(columns=['open', 'high', 'low', 'close', 'adjclose', 'volume'])
         #normalize all scales so that before data concatination all data is on the same scale and can see what is an outlier for the model so no characters must be used in any feature
         df = (df - df.mean()) / df.std()
-
+        
+        
         return df
     
     def extract_season(self,month):
@@ -278,14 +288,16 @@ class Preprocessor:
             return 4
         
     def create_sequences(self,dataset_extracted ,window_size = 60):
+        #dataset_extracted is a df
         #Each window will be 60 days and a list of individual tensors will store these said windows
         #Also df headers are removed when coverted to numpy so there is no need to worry about removing them. I had to check online.
         #The torch.tensor converts the numpy array (previously a df) to a tensor while maintaining its shape and columns
         #There is no need to worry about having no titles as the extracted datasets are always created in the same order
         list_of_tensor_sequences = []
         for starting_datapoint in range(len(dataset_extracted) - window_size):
-            list_of_tensor_sequences.append(torch.tensor(dataset_extracted[starting_datapoint:starting_datapoint + window_size].values))# needs .values to extract the valuesn
-        return list_of_tensor_sequences
+            list_of_tensor_sequences.append(torch.tensor(dataset_extracted[starting_datapoint:starting_datapoint + window_size].values).float())# needs .values to extract the values
+        tensor_of_combined_sequences = torch.stack(list_of_tensor_sequences) #stack them so that training can go over them in batches
+        return tensor_of_combined_sequences
         
         
 class ClassicalModelManager:
@@ -323,10 +335,6 @@ We want to inherit from the NN class as it gives us access to the Mean Squared e
 class Autoencoder(nn.Module):
     def __init__(self):
         super().__init__() # required to initialize the parent class that is nn to use its functions
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
-        #Not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
-        #Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
-        
         
         #Define the NN layers for the autoencoder
         '''
@@ -346,7 +354,6 @@ class Autoencoder(nn.Module):
             #You should use Tanh as it maps the values between -1 and 1 which is slightly smaller scale than a normalized dataset but still would get the model to learn the fundermental patterns. Using a adjusted scale.
         )
         
-        
         #For the decoder it needs to do the reverse operations of the encoder to recreate the dataset
         self.decoder = nn.Sequential(
             nn.Linear(45,90),#hidden layer
@@ -355,8 +362,8 @@ class Autoencoder(nn.Module):
         )
         self.to(device)
         
-    def forward(self,x):
-        encoded = self.encoder(x)
+    def forward(self,input_for_neuron):
+        encoded = self.encoder(input_for_neuron)
         decoded = self.decoder(encoded)
         return decoded
     
@@ -365,23 +372,25 @@ class Autoencoder(nn.Module):
 class AutoencoderModelManager():
     def __init__(self):
         self.autoencoder_model = Autoencoder() #Establish the model we use to execute said calculations
-        self.criterion = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder, so it is the criterion
-        self.optimization = torch.optim.Adam(self.autoencoder_model.parameters(), lr = 0.001) #this updates the weights based on the learning rate which controls how much these weights are updated by. Also, self.autoencoder_model.parameters() directs which weights to update for the ML algorithm and lr is in reference to lr
+        self.training_criterion = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder, so it is the criterion
+        self.prediction_criterion = nn.MSELoss(reduction='none') #reduction='none' instead of allowing it to return one average loss value for the entire batch entered (like the training one). It returns a tensor of the same shape as the input (meaning each input sequence has an assigned loss value).
+        self.optimization = torch.optim.Adam(self.autoencoder_model.parameters(), lr = 0.0001) #this updates the weights based on the learning rate which controls how much these weights are updated by. Also, self.autoencoder_model.parameters() directs which weights to update for the ML algorithm and lr is in reference to lr
         #Adam seems to be the best optimizer based from this source: https://www.geeksforgeeks.org/deep-learning/adam-optimizer/
         
     def training_loop(self, sequences):
         #A sequence is how many 60 day sliding windows we can recreate from a given training dataset
         #An epoch is how many times the model goes over a training dataset during training (forward and backwards (backwards is to check the weights and see if they need to be changed))
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #keep it out of the loop as we don't want to create it each loop.
-        for epoch in range(100):
-            for sequence in sequences:
+        for epoch in range(20):
+            for batch_increment in range(0, len(sequences), 32):
                 #do the forward then backward pass of the loop and update the weights
-                input_vector_sequence = sequence.reshape(-1,900).to(device) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
+                batch = sequences[batch_increment : batch_increment+32]
+                input_vector_sequence = batch.reshape(-1,900) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements. So it takes in batches of 32 sequences at a time
                 reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
-                loss = self.criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
+                loss = self.training_criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
                 
                 self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
                 loss.backward()#Go back across the dataset using chain rule to check the derivatives and see how the loss function to see the d loss/ d Weight for the gradient of the loss against the weight function.
+                #torch.nn.utils.clip_grad_norm_(self.autoencoder_model.parameters(), max_norm=1.0)# This line ensure that the weights are scaled proportionately to one another avoiding a single weight from being exessively larger than the rest
                 self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It then uses the gradient as such: weight - lr * gradient.
             print(f"Epoch: {epoch + 1 }, Loss: {loss.item():.4f}") #loss is the difference between the constructed and reconstructed output
     
@@ -393,22 +402,22 @@ class AutoencoderModelManager():
         So if a sequence is above the mean of the loss and 2 times more than standard deviations summed up in a one tailed test then it is an anomaly.
         It is using a one tailed test as you can't get an error below zero has MSE uses the square difference.
         '''
-        list_of_loss_values = [] #append tuples of the starting index which is another scale relative to the actual date
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #keep it out of the loop as we don't want to create it each loop.
+        list_of_loss_values = [] #append mean value of a sequence and the starting index (which is the ordinal index that is the same to the dfs so i can find the starting date)
         self.autoencoder_model.eval() #this sets the model into evaluation mode. It disables dropout and batch normalization layers
         #Ensures that it stops making a computation graph during a forward pass. So it doesn't take up more memory.
         with torch.no_grad():
             for sequence in sequences:
-                input_vector_sequence = sequence.reshape(-1,900).to(device) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
+                input_vector_sequence = sequence.reshape(-1,900) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
                 reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
-                loss = self.criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
-                list_of_loss_values.append(loss.item())
+                losses_per_sequence = self.prediction_criterion(reconstructed_sequence_data, input_vector_sequence).mean(dim=1) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is and .mean() returns each sequences loss values from a batch in a vector of 1 dimension but as an average for that sequence
+                for loss in losses_per_sequence:
+                    list_of_loss_values.append(loss.item())
                 
             #Now we have the list of loss values and each index is corresponding to the date it starts at from the df and dataset it is from
             #convert it to a torch temporarily to a tensor. This is becuase Tensors build off of the numpy extension meaning their sizes are fixed
             tensor_of_loss_values = torch.tensor(list_of_loss_values)
-            mean_loss = tensor_of_loss_values.mean() #returns a tensor
-            std_loss = tensor_of_loss_values.std() #return a tensor  so need to use .item() to return it
+            mean_loss = tensor_of_loss_values.mean() #returns a tensor and in this case is the mean of the mean of sequences
+            std_loss = tensor_of_loss_values.std() #return a tensor  so need to use .item() to return the actual std.std reconstruction errors are used to create the threshold to find how many lie in a 99% confidence based on the relative distance from the mean of sequences more or less a span of how much the population should lie in
             #This is where I found the measuremetn of a 99% confidence interval for a one tailed test: https://stats.libretexts.org/Bookshelves/Introductory_Statistics/Statistics_with_Technology_2e_(Kozak)/12%3A_Appendix-_Critical_Value_Tables/12.02%3A_Normal_Critical_Values_for_Confidence_Levels
             #so you use the 98% confidence interval (which is for two tail tests) as we are using one tail it will cover 99% of the population so it is 2.33 std away from the mean
             list_of_loss_values_and_dates = [[value,i] for i, value in enumerate(list_of_loss_values) if value > 2.33* std_loss.item() + mean_loss.item()]
@@ -598,6 +607,7 @@ class MainControllerUI:
                 if self.loader.file_validation(file_path):
                     data_collected = pd.read_csv(file_path)
                     dataset_list.append(self.preprocessor.machine_learning_data_extraction(data_collected))
+                    #print(data_extracted.isin([np.inf, -np.inf]).any())
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
                     raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
@@ -606,9 +616,13 @@ class MainControllerUI:
             
             
             #loop for deep model training
+            #it is slow but due to the size and how small the bottleneck is
+            file_being_trained = 0
             for dataset_preprocessed in dataset_list:
-                list_of_sequences = self.preprocessor.create_sequences(dataset_preprocessed)
-                self.deep_learning_model_manager.training_loop(list_of_sequences)
+                print(f"file being trained: {file_being_trained}")
+                file_being_trained+=1
+                tensors_of_sequences_batches = self.preprocessor.create_sequences(dataset_preprocessed)
+                self.deep_learning_model_manager.training_loop(tensors_of_sequences_batches)
                 
                 
             
@@ -664,8 +678,10 @@ class MainControllerUI:
                     
                     
                     extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
-                    list_of_loss_values_and_dates = self.deep_learning_model_manager.prediction(extracted_predict_data)
+                    tensor_of_combined_sequences = self.preprocessor.create_sequences(extracted_predict_data)
+                    list_of_loss_values_and_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
                     print(list_of_loss_values_and_dates)
+                    print(f"The anomaly rate found in the dataset is {len(list_of_loss_values_and_dates)/len(extracted_predict_data):.4f}%")
                     
                     
                     
@@ -697,6 +713,6 @@ class MainControllerUI:
         
 ui =  MainControllerUI()
 ui.copyright_disclaimer()
-ui.start()
+#ui.start()
 ui.start_deep_learning_model()
 #ui.start_classical_model()S
