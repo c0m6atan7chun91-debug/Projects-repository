@@ -420,7 +420,7 @@ class AutoencoderModelManager():
             std_loss = tensor_of_loss_values.std() #return a tensor  so need to use .item() to return the actual std.std reconstruction errors are used to create the threshold to find how many lie in a 99% confidence based on the relative distance from the mean of sequences more or less a span of how much the population should lie in
             #This is where I found the measuremetn of a 99% confidence interval for a one tailed test: https://stats.libretexts.org/Bookshelves/Introductory_Statistics/Statistics_with_Technology_2e_(Kozak)/12%3A_Appendix-_Critical_Value_Tables/12.02%3A_Normal_Critical_Values_for_Confidence_Levels
             #so you use the 98% confidence interval (which is for two tail tests) as we are using one tail it will cover 99% of the population so it is 2.33 std away from the mean
-            list_of_loss_values_and_dates = [[value,i] for i, value in enumerate(list_of_loss_values) if value > 2.33* std_loss.item() + mean_loss.item()]
+            list_of_loss_values_and_dates = [i for i, value in enumerate(list_of_loss_values) if value > 2.33* std_loss.item() + mean_loss.item()]
             return list_of_loss_values_and_dates
         
         
@@ -431,9 +431,9 @@ class Interpretation:
     def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
         #with_name() allows me to change the name of the stem path
         self.anomaly_score_histogram( scores, predictions, path_name / "histogram.png")
-        self.representation_classical_model( scores, predictions,data_extracted, path_name / "scatter.png")
+        self.scatter_graph_representation( scores, predictions,data_extracted, path_name / "scatter.png")
         
-    def representation_classical_model(self, scores, predictions,data_extracted, path_name):
+    def scatter_graph_representation(self, scores, predictions,data_extracted, path_name):
        
         # Add scores and labels to dataframe
         data_extracted['anomaly_score'] = predictions
@@ -470,6 +470,29 @@ class Interpretation:
         
     def shap_diagrams(self,isolation_forest_model, data_extracted):
         shap.summary_plot()
+        
+    def interpretation_of_autoencoder(self,file_to_predict,anomalous_window_start_dates,anomalous_sequences):
+        pass
+    
+    def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict, anomalous_window_start_dates):
+        #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
+        figure, axis = plt.subplots(figsize=(14,5)) # width then height
+        #scatter call for normal points
+        axis.scatter(file_to_predict['date'], file_to_predict['adjclose'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
+        #scatter call for adjclose points to plot
+        for group in anomalous_window_start_dates:
+            #required to highlight sections on the graph with anomalous autocorrelation
+            plt.axvspan(group[0], group[-1] + 60, color='red', alpha=0.2)
+        dates = [file_to_predict['date'][index] for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
+        plt.xticks(dates, rotation = 90,fontsize=7)
+        axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
+        axis.set_xlabel("index of files")#xaxis label, font size, font weight, font colour
+        axis.set_ylabel("adjclose")
+        axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 60])
+        plt.title("Diagram of the varying anomaly scores against index occurance")
+        plt.tight_layout()#Prevents lables from being cut off
+        plt.savefig(path_name)#save figure to a file 
+        
     
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -644,7 +667,7 @@ class MainControllerUI:
         datasets_directory.mkdir(parents=True,exist_ok=True)
         #need to collect all subdirectories again of files to present to user for selection
         all_sub_directories = list(datasets_directory.glob("*.csv"))
-        prediction_outcome = Path("me245/File_of_outcomes")
+        prediction_outcome = Path("me245/File_of_outcomes/autoencoder")
         prediction_outcome.mkdir(parents=True, exist_ok=True)
         user_wants_predictions = True
         while(user_wants_predictions):
@@ -679,9 +702,19 @@ class MainControllerUI:
                     
                     extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
                     tensor_of_combined_sequences = self.preprocessor.create_sequences(extracted_predict_data)
-                    list_of_loss_values_and_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
-                    print(list_of_loss_values_and_dates)
-                    print(f"The anomaly rate found in the dataset is {len(list_of_loss_values_and_dates)/len(extracted_predict_data):.4f}%")
+                    list_of_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
+                    print(list_of_dates)
+                    print(f"The anomaly rate found in the dataset is {len(list_of_dates)/len(extracted_predict_data):.4f}%")
+                    #now we only need to group the values that have consecutive range of 60 between each other. for example 1,23,56,77, 544 would be grouped as [1,77],[544] for matlib
+                    #for Shap you need the actual sequence itself
+                    splice_indexs = np.where(np.diff(list_of_dates) > 60)[0]+1#np.diff() returns the differences between indexs in the list. Also, [0] returns the actual array of indicies and the + 1 represents where to cut after the selected value so for example you want to cut after 6 the +1 indicates to cut after it
+                    list_of_dates = np.split(list_of_dates,splice_indexs)
+                    print(list_of_dates)
+                    
+                    
+                    self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction,file_to_predict ,list_of_dates)
+                        
+                        
                     
                     
                     
