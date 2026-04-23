@@ -3,7 +3,6 @@ import numpy as np
 from pathlib import Path
 import yfinance as yf
 import time
-import numpy as np
 import shutil
 from sklearn.ensemble import IsolationForest
 import torch
@@ -14,14 +13,9 @@ import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
 
 
-device = torch.device('cpu') # this line states if the GPU is available and then uses the CUDA which is an API made by NVIDIA that allows the program to use the GPU for computation
-#Not a language but uses c/c++ extentions.It uses tensor operations on the GPU. This is because the GPU is designed for parallel computation through many mini cores compared to a CPU few but powerful cores
-#Neuron training is basically a neuron that takes in a matrix input and return a singular output into another to eventually create an output
-#It is defined up here as multiple classes need it
 
 
 
-#p.s. remember to use camel case instead of PascalCase for java
 class DataLoader:
     """
     Handles loading, metadata extraction, and structural validation =,
@@ -29,11 +23,6 @@ class DataLoader:
     
     This class handles the basic data loading for all files to be read from the given file location from the user. It is effectively data preprocessing 1 
     as it is suppose to check if the files are valid and can be preprocessed by the ML project before it goes onto the stage 2 of data preprocessing.
-    
-    hand in the data_set_path as a Path() type it is professional
-    Flexibility: If you want to load 10 different datasets in a loop, you don't want to re-initialize the class every time. 
-    You want one "Loader" that you can give different paths to.
-    Validation: You can check if the path exists before you even try to open the file.
     """
     def load_and_validate_dataset(self):
         print("="*60)
@@ -44,7 +33,8 @@ class DataLoader:
         #now we must go through each file within the directory within the CSV_Files_training_unverified
         all_sub_directories = list(datasets_directory.glob("*.csv"))
         if all_sub_directories != []:
-            #reading in all required files for the 
+            #reading in all required files in the unverified folder to see if they are usable
+            
             print("Available CSV files training unverified to read from:\n")
             for file_path in all_sub_directories:
                 #removes the file type at the end of the name. eg pdf for example
@@ -52,7 +42,7 @@ class DataLoader:
                 if file_path.suffix == ".csv":
                     print(f"File name: {file_name}  File size: {file_path.stat().st_size / 1024:.2f}Kb   File type: {file_path.suffix}.\n")
                     if self.file_validation(file_path):
-                        #you would want to store all the paths that are 
+                        #you would want to store all the paths that are valid for training and prediction to be in the verified folder
                         print(f"The file {file_name} is a valid file for the models training process.\n")
                         datasets_paths_verified.append(file_path)
                         
@@ -77,14 +67,14 @@ class DataLoader:
                     print()
                     shutil.move(file, destination_directory / file.name)
             except Exception as e:
-                raise f"The following problem has occured: {e}."
+                raise Exception(f"The following problem has occured: {e}.")
         else:
             raise Exception("There aren't enough valid files for the model to be trained on (it must be at least 10).\n")
         
     def file_validation(self,file_path):
         #this checks if the path to the file actually exists
         if not file_path.exists():
-            raise f"Error: the file '{file_path.name}' doesn't exist."
+            raise ValueError(f"Error: the file '{file_path.name}' doesn't exist.")
         
         try:
             df_dataset = pd.read_csv(file_path)
@@ -117,8 +107,7 @@ class DataLoader:
             df_dataset.to_csv(file_path, index=False)
             return True
         except Exception as file_error:
-            print(f"System could not read the file {file_path.name} as a df: {file_error}")
-            return False
+            raise Exception(f"System could not read the file {file_path.name} as a df: {file_error}")
         
         #cannot handle missing data as that would leave too many problems. We must have the assumption that the data is complete like when using yfinance
         #sort the dates within the file then remove the column before fitting as it can lead to overfitting.
@@ -228,7 +217,7 @@ class DataLoader:
                 print()
                 shutil.move(file, datasets_directory / file.name)
         except Exception as e:
-            raise f"The following problem has occured: {e}."
+            raise ValueError(f"The following problem has occured: {e}.")
         
             
 class Preprocessor:
@@ -253,12 +242,12 @@ class Preprocessor:
         df['log_high_change'] = np.log(df['high'].clip(lower=1e-9) / df['high'].shift(1).clip(lower=1e-9))
         df['log_close_change'] = np.log(df['close'].clip(lower=1e-9) / df['close'].shift(1).clip(lower=1e-9))
         df['log_open_change'] = np.log(df['open'].clip(lower=1e-9) / df['open'].shift(1).clip(lower=1e-9))
-        df['log_volume_change'] = np.log(df['volume'].clip(lower=1e-9) / df['volume'].shift(1).clip(lower=1e-9))
+        df['log_volume_change'] = np.log(df['volume'].clip(lower=1e-9) / df['volume'].shift(1).clip(lower=1e-9)) # numerators need to be clipped as well to stop -inf errors in the preprocessor
         
         #checks the difference between close and open against the open value.
         #shift() returns the df but moves them back by + if you do -1 it moves them down by 1
-        df['difference_open_close'] = ((df['open'] - df['close'])/df['open']).clip(lower=1e-9)
-        df['difference_high_low'] = ((df['high'] - df['low'])/df['open']).clip(lower=1e-9)
+        df['difference_open_close'] = (df['open'] - df['close'])/df['open'].clip(lower=1e-9)
+        df['difference_high_low'] = (df['high'] - df['low'])/df['open'].clip(lower=1e-9)
         #date extraction the isolation forest needs to tell if a number is normal for a time of year (1-12) for months
         df['date'] = pd.to_datetime(df['date'])
         df['year'] = df['date'].dt.year
@@ -324,7 +313,7 @@ class ClassicalModelManager:
         #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
         scores = self.isolation_forest.predict(unseen_data)
         #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
-        prediction = self.isolation_forest.decision_function(unseen_data)
+        prediction = self.isolation_forest.decision_function(unseen_data)#the list of
         return scores, prediction
     
 '''
@@ -430,6 +419,7 @@ class AutoencoderModelManager():
 class Interpretation:
     def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
         #with_name() allows me to change the name of the stem path
+        self.shap_diagrams(path_name / "shap.png", isolation_forest_model, data_extracted, scores)
         self.anomaly_score_histogram( scores, predictions, path_name / "histogram.png")
         self.scatter_graph_representation( scores, predictions,data_extracted, path_name / "scatter.png")
         
@@ -466,17 +456,21 @@ class Interpretation:
         plt.legend()
         plt.tight_layout()#Prevents lables from being cut off
         plt.savefig(path_name)#save figure to a file 
+        plt.close()
         
         
-    def shap_diagrams(self,isolation_forest_model, data_extracted):
-        shap.summary_plot()
+    def shap_diagrams(self,path_name, isolation_forest_model, data_extracted, scores):
+        explainedModel = shap.TreeExplainer(isolation_forest_model) # tree explainer takes the fitted sklearn model and learns how the tree structure splits the data(becuase of its training). 
+        list_of_anomaly_points = data_extracted[scores == -1] #we only want the shap for anomalies
+        shap_values_model = explainedModel.shap_values(list_of_anomaly_points)# for each row it explains how much each feature contributed to its anomaly score
+        shap.summary_plot(shap_values_model, list_of_anomaly_points,plot_type="bar", show=False)
+        plt.savefig(path_name)#save figure to a file 
+        plt.close()
         
-    def interpretation_of_autoencoder(self,file_to_predict,anomalous_window_start_dates,anomalous_sequences):
-        pass
     
     def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict, anomalous_window_start_dates):
         #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
-        figure, axis = plt.subplots(figsize=(14,5)) # width then height
+        figure, axis = plt.subplots(figsize=(30,5)) # width then height
         #scatter call for normal points
         axis.scatter(file_to_predict['date'], file_to_predict['adjclose'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
         #scatter call for adjclose points to plot
@@ -484,7 +478,7 @@ class Interpretation:
             #required to highlight sections on the graph with anomalous autocorrelation
             plt.axvspan(group[0], group[-1] + 60, color='red', alpha=0.2)
         dates = [file_to_predict['date'][index] for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
-        plt.xticks(dates, rotation = 90,fontsize=7)
+        plt.xticks(dates, rotation = 90,fontsize=7)# plots all starting points of the sequences (60 days) onto the graph
         axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
         axis.set_xlabel("index of files")#xaxis label, font size, font weight, font colour
         axis.set_ylabel("adjclose")
@@ -492,7 +486,7 @@ class Interpretation:
         plt.title("Diagram of the varying anomaly scores against index occurance")
         plt.tight_layout()#Prevents lables from being cut off
         plt.savefig(path_name)#save figure to a file 
-        
+        plt.close()
     
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -510,7 +504,7 @@ class MainControllerUI:
         
         self.interprebility = Interpretation()
         self.data_loaded = []
-    def start(self):
+    def retrieve_stock_market_data(self):
         return self.loader.create_stock_market_dataset()
     
     def copyright_disclaimer(self):
@@ -524,96 +518,12 @@ class MainControllerUI:
         print("Please note: this program uses the yFinance app to extract data using a Yahoo API.\nyFinance is not affiliated to Yahoo, which has it’s own terms relating to reuse of data.\nFor further information please see the yFinance Project Information Page (https://pypi.org/project/yfinance/) and terms of service for Yahoo and Yahoo API’s, both of which can be accessed from the Yahoo Terms page: https://policies.yahoo.com/us/en/yahoo/terms/index.htm.")
         print("="*60)
         print("\n")
-        
-    def start_classical_model(self):
-        self.loader.load_and_validate_dataset()
-        #convert the input string input into a path object        
-        datasets_directory = Path('me245/CSV_Files_training_verified')
-        datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
-        all_sub_directories = list(datasets_directory.glob("*.csv"))
-        #for data extraction and model training
-        if all_sub_directories != []:
-            print("="*60)
-            print("\n")
-            print("Training has started of the Isolation Forest model. Please wait...\n")
-            #we need to recheck the files as the user might have moved them to the wrong location
-            dataset_list = []
-            for file_path in all_sub_directories:
-                if self.loader.file_validation(file_path):
-                    data_collected = pd.read_csv(file_path)
-                    dataset_list.append(self.preprocessor.machine_learning_data_extraction(data_collected))
-                else:
-                    shutil.move(file_path, datasets_directory_unverfied / file_path.name)
-                    raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
-            complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
-            self.classical_model.classical_model_training(complete_set_of_training_data)
-            print("Training of the Isolation Forest model has been completed and predictions are now available\n")
-            print("="*60)
-            print("\n")
-        else:
-            raise "no files exist in the verified folder"
-        #the new directory we are now working with is the unseen one and we need to create a prediction for the one the user selects
-        datasets_directory = Path("me245/CSV_Files_unseen_dataset")
-        datasets_directory.mkdir(parents=True,exist_ok=True)
-        #need to collect all subdirectories again of files to present to user for selection
-        all_sub_directories = list(datasets_directory.glob("*.csv"))
-        prediction_outcome = Path("me245/File_of_outcomes")
-        prediction_outcome.mkdir(parents=True, exist_ok=True)
-        user_wants_predictions = True
-        while(user_wants_predictions):
-            if all_sub_directories != []:
-                print("="*60)
-                print("\n")
-                print("Please select a file that you want to prediction for:")
-                for i,file_path in enumerate(all_sub_directories):
-                    #removes the file type at the end of the name. eg pdf for example
-                    if file_path.suffix == ".csv":
-                        print(f"Index: {i} File name: {file_path.stem}  File size: {file_path.stat().st_size / 1024:.2f}Kb   File type: {file_path.suffix}.\n")
-                while(True):
-                    try:
-                        user_index = int(input("Please enter the index of which file you would like to have predicted out of the ones allocated.\n"))
-                        if 0 <= user_index < len(all_sub_directories):
-                            break
-                    except:
-                        print("Please enter a valid input for the input\n")
-                file_selected = all_sub_directories[user_index]
-                #we need to call a directory the file_name to store the out come
-                asset_prediction = prediction_outcome / file_selected.stem
-                asset_prediction.mkdir(parents=True,exist_ok=True)
-                if self.loader.file_validation(file_selected):
-                    print("The file is valid to make prediction\n")
-                    file_to_predict = pd.read_csv(file_selected)
-                    extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
-                    scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
-                    self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,asset_prediction,self.classical_model)
-                    #insert interpretation of prediction function here
-                    print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
-                    
-                #check if the user wants to make another prediction using the code below
-                while(True):
-                    attempt_answer = input("Would you like to make another prediction?([y]es or [n]o).\n")
-                    if attempt_answer.lower() == 'n':
-                        user_wants_predictions = False
-                        break
-                    elif attempt_answer.lower() == 'y':
-                        break
-                    else:
-                        print("[y]es or [n]o are the only valid inputs please try again).\n")
-                print("="*60)
-                print("\n") 
-            else:
-                print("There are no files in the CSV_Files_unseen_dataset folder. Please enter a file in there that you want to predict before starting the model.\n")
-                print("="*60)
-                print("\n")
-                break
     
-    def start_deep_learning_model(self):
+    #works don't touch yet
+    def machine_learning_pipeline(self,model_type):
         #we need to check if the files are valid again in case of changes
         self.loader.reset_file_validation()
         self.loader.load_and_validate_dataset()#check if the datasets are valid in the unverified folder
-        
-        
-        
         #convert the input string input into a path object        
         datasets_directory = Path('me245/CSV_Files_training_verified')
         datasets_directory_unverfied = Path('me245/CSV_Files_training_unverified')
@@ -622,54 +532,51 @@ class MainControllerUI:
         if all_sub_directories != []:
             print("="*60)
             print("\n")
-            print("Training has started of the autoencoder model. Please wait...\n")
+            print(f"Training has started of the {model_type} model. Please wait...\n")
+            
             #we need to recheck the files as the user might have moved them to the wrong location
-            #this is where we execute the data
+            #this is where we execute the data re-validation and preprocessing occurs below
             dataset_list = []
             for file_path in all_sub_directories:
+                
                 if self.loader.file_validation(file_path):
                     data_collected = pd.read_csv(file_path)
                     dataset_list.append(self.preprocessor.machine_learning_data_extraction(data_collected))
-                    #print(data_extracted.isin([np.inf, -np.inf]).any())
+                    
                 else:
                     shutil.move(file_path, datasets_directory_unverfied / file_path.name)
-                    raise f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified"
+                    raise ValueError(f"The file {file_path.stem} doesn't meet the requirements. It has been moved to the folder unverified")
                 
-            #here you change the training dataset as you can't just combine them together
-            
-            
-            #loop for deep model training
-            #it is slow but due to the size and how small the bottleneck is
-            file_being_trained = 0
-            for dataset_preprocessed in dataset_list:
-                print(f"file being trained: {file_being_trained}")
-                file_being_trained+=1
-                tensors_of_sequences_batches = self.preprocessor.create_sequences(dataset_preprocessed)
-                self.deep_learning_model_manager.training_loop(tensors_of_sequences_batches)
+            #change instructions based on wanted model for what model needs to be trained
+            if(model_type == "Isolation Forest"):
+                complete_set_of_training_data = pd.concat(dataset_list, ignore_index=True)
+                self.classical_model.classical_model_training(complete_set_of_training_data)
                 
+            elif(model_type == "Autoencoder"):
+                #loop for deep model training
+                #it is slow but due to the size and how small the bottleneck is
+                file_being_trained = 0
+                for dataset_preprocessed in dataset_list:
+                    print(f"file being trained: {file_being_trained}")
+                    file_being_trained+=1
+                    tensors_of_sequences_batches = self.preprocessor.create_sequences(dataset_preprocessed)
+                    self.deep_learning_model_manager.training_loop(tensors_of_sequences_batches)
                 
-            
-            
-            
-            print("Training of the Isolation Forest model has been completed and predictions are now available\n")
+            print(f"Training of the {model_type} model has been completed and predictions are now available\n")
             print("="*60)
             print("\n")
         else:
-            raise "no files exist in the verified folder"
-        
-        
-        
-        
-        
-        
+            raise ValueError("no files exist in the verified folder")#valueerror() signals that a function has recieved an argement of the right type but is unacceptable
         #the new directory we are now working with is the unseen one and we need to create a prediction for the one the user selects
         datasets_directory = Path("me245/CSV_Files_unseen_dataset")
         datasets_directory.mkdir(parents=True,exist_ok=True)
         #need to collect all subdirectories again of files to present to user for selection
         all_sub_directories = list(datasets_directory.glob("*.csv"))
-        prediction_outcome = Path("me245/File_of_outcomes/autoencoder")
+        prediction_outcome = Path(f"me245/File_of_outcomes/{model_type}")
         prediction_outcome.mkdir(parents=True, exist_ok=True)
         user_wants_predictions = True
+        
+        #loop to make predictions
         while(user_wants_predictions):
             if all_sub_directories != []:
                 print("="*60)
@@ -696,34 +603,24 @@ class MainControllerUI:
                     
                     
                     
-                    #so we need to extract the predicted data and then create the predictions that it recieves
+                    #here we make predictions depending on which model is in use. we apply the model and create an output
+                    if(model_type == "Isolation Forest"):
+                        extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
+                        scores, prediction = self.classical_model.classical_model_prediction(extracted_predict_data)
+                        self.interprebility.interpretation_collection(scores,prediction,extracted_predict_data ,asset_prediction,self.classical_model.isolation_forest)
+                    elif(model_type == "Autoencoder"):
+                        extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
+                        tensor_of_combined_sequences = self.preprocessor.create_sequences(extracted_predict_data)
+                        list_of_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
+                        print(f"The anomaly rate found in the dataset is {len(list_of_dates)/len(extracted_predict_data):.4f}%")
+                        #now we only need to group the values that have consecutive range of 60 between each other. for example 1,23,56,77, 544 would be grouped as [1,77],[544] for matlib
+                        #for Shap you need the actual sequence itself
+                        splice_indexs = np.where(np.diff(list_of_dates) > 60)[0]+1#np.diff() returns the differences between indexs in the list. Also, [0] returns the actual array of indicies and the + 1 represents where to cut after the selected value so for example you want to cut after 6 the +1 indicates to cut after it
+                        list_of_dates = np.split(list_of_dates,splice_indexs)
+                        self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction / "autoencoder_scatter_graph.png", file_to_predict, list_of_dates)
                     
-                    
-                    
-                    extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
-                    tensor_of_combined_sequences = self.preprocessor.create_sequences(extracted_predict_data)
-                    list_of_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
-                    print(list_of_dates)
-                    print(f"The anomaly rate found in the dataset is {len(list_of_dates)/len(extracted_predict_data):.4f}%")
-                    #now we only need to group the values that have consecutive range of 60 between each other. for example 1,23,56,77, 544 would be grouped as [1,77],[544] for matlib
-                    #for Shap you need the actual sequence itself
-                    splice_indexs = np.where(np.diff(list_of_dates) > 60)[0]+1#np.diff() returns the differences between indexs in the list. Also, [0] returns the actual array of indicies and the + 1 represents where to cut after the selected value so for example you want to cut after 6 the +1 indicates to cut after it
-                    list_of_dates = np.split(list_of_dates,splice_indexs)
-                    print(list_of_dates)
-                    
-                    
-                    self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction,file_to_predict ,list_of_dates)
-                        
-                        
-                    
-                    
-                    
-                    
-                    
-                    
-                    
-                    #insert interpretation of prediction function here
                     print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
+                    
                     
                 #check if the user wants to make another prediction using the code below
                 while(True):
@@ -742,10 +639,26 @@ class MainControllerUI:
                 print("="*60)
                 print("\n")
                 break
+            
+    def loop_for_ui(self):
+        self.copyright_disclaimer()
+        model_selected = False
+        while(not model_selected):
+            attempt_answer = input("Please select one of the following options      [0] Extract stock market data    [1] Isolation Forest  [2] Autoencoder\n")
+            if attempt_answer == '0':
+                self.retrieve_stock_market_data()
+                
+            elif attempt_answer.lower() == '1':
+                model_selected = True
+                self.machine_learning_pipeline("Isolation Forest")
+            elif attempt_answer == '2':
+                model_selected = True
+                self.machine_learning_pipeline("Autoencoder")
+            else:
+                print("[0], [1], and [2] are the only valid inputs please try again).\n")
+            print("="*60)
+            print("\n") 
         
         
 ui =  MainControllerUI()
-ui.copyright_disclaimer()
-#ui.start()
-ui.start_deep_learning_model()
-#ui.start_classical_model()S
+ui.loop_for_ui()
