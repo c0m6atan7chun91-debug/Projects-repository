@@ -147,7 +147,6 @@ class DataLoader:
                             print(data)
                             #Flatten the MultiIndex headers as they are tuples e.g.('adjclose','comapanyname')
                             data = data.reset_index()
-                            data.columns = data[0].str.lower()
                             
                             #STANDARDIZE THE COLUMNS (Lowercase and remove spaces for validation logic) which moves date as a column instead of index
                             data.columns = [str(col).lower().replace(' ', '') for col in data.columns]
@@ -348,8 +347,7 @@ class Autoencoder(nn.Module):
             nn.Linear(45,90),#hidden layer
             nn.Tanh(),
             nn.Linear(90,900)#output layer and no activation function required as the raw output should be the normalized values limiting it between 1 and -1 would skew the MSEs evaluation of the output
-        )
-        self.to(device)
+        )  
         
     def forward(self,input_for_neuron):
         encoded = self.encoder(input_for_neuron)
