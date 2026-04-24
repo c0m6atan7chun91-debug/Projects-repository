@@ -1,14 +1,13 @@
 import pandas as pd
-import numpy as np
+import numpy as np 
 from pathlib import Path
 import yfinance as yf
-import time
+import time 
 import shutil
 from sklearn.ensemble import IsolationForest
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import shap
+import shap#
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
 
@@ -149,7 +148,7 @@ class DataLoader:
                             data = data.reset_index()
                             
                             #STANDARDIZE THE COLUMNS (Lowercase and remove spaces for validation logic) which moves date as a column instead of index
-                            data.columns = [str(col).lower().replace(' ', '') for col in data.columns]
+                            data.columns = [col[0].lower().replace(' ', '') for col in data.columns]
                         
                             print(f"The data that has been requested has been successfully retrieved! {len(data)} rows in the dataset!")
                             
