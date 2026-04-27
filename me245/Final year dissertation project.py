@@ -7,7 +7,7 @@ import shutil
 from sklearn.ensemble import IsolationForest
 import torch
 import torch.nn as nn
-import shap#
+import shap
 import matplotlib.pyplot as plt # Required to save the SHAP plots as images
 
 
@@ -152,13 +152,28 @@ class DataLoader:
                         
                             print(f"The data that has been requested has been successfully retrieved! {len(data)} rows in the dataset!")
                             
-                            #check if a folder exists and define it
-                            directory = Path("me245/CSV_Files_training_unverified")
-                            directory.mkdir(parents=True,exist_ok=True) 
+                            
                             '''
                             parent checks if there is a missing file in the given path and if there is one creates it -it creates the parent chain of the file directory given.
                             exist_ok checks if the folder exists if it does then it moves onto the next line of code. It ensure that the code doesn't crash if it exists
                             '''
+                            
+                            while(True):
+                                attempt_answer = input(f"Would you like {name_of_market} to be in the [u]nseen directory or the [t]raining unverified folder? \n")
+                                if attempt_answer.lower() == 'u':
+                                    directory = Path("me245/CSV_Files_unseen_dataset")
+                                    directory.mkdir(parents=True,exist_ok=True) 
+                                    break
+                                elif attempt_answer.lower() == 't':
+                                    #check if a folder exists and define it
+                                    directory = Path("me245/CSV_Files_training_unverified")
+                                    directory.mkdir(parents=True,exist_ok=True) 
+                                    break
+                                else:
+                                    print("[u]nseen directory or the [t]raining unverified are the only valid inputs please try again.)\n")
+                        
+                            
+                            
                             
                             #this line adds the designated file path to the path class the '/' gets overloaded and is now a function that adds it to the path using the correct slash for the operating system
                             directory = directory / f"{name_of_market}_{start_date_dataset}_{end_date_dataset}.csv"
@@ -167,7 +182,7 @@ class DataLoader:
                     #need to wait frequent requests may cause it to stop and deny further access
                     #if there is a problem in access for developers or markers please delete the associated cookies to yfinance to reset this problem
                     time.sleep(5)
-                            
+                    
                 
                     #User may need more than one dataset
                     while True:
@@ -222,7 +237,7 @@ class Preprocessor:
     
     def machine_learning_data_extraction(self, df_data_to_extract):
         df = df_data_to_extract.copy()
-        
+        df = df[['date', 'open', 'high', 'low', 'close', 'adjclose', 'volume']] # ensures that it only contains those columns
         #this can indicate sudden stock splits, indicate someone pumping and dumping, or potential insider training  build up if there is a sustained high volume diff
         minimum_rolling_window_volume = df['volume'].rolling(3).mean()
         df['short_mid_diff_volume'] = df['volume'].rolling(6).mean() - minimum_rolling_window_volume
@@ -250,8 +265,8 @@ class Preprocessor:
         df['date'] = pd.to_datetime(df['date'])
         df['year'] = df['date'].dt.year
         df['month'] = df['date'].dt.month
-        df['season'] = df['month'].copy().apply(self.extract_season)
-        df = df.drop(columns = ['date'])
+        df['season'] = df['month'].copy().apply(self._extract_season)
+        df = df.set_index('date')
         
         #we need to drop all data with missing columns
         df = df.dropna(axis =0, how = 'any')#axis (1 is column 0 is row), how refers to what scenario to drop a collumn (all - all are missing and any - any values are missing), and no need to worry about threshold as there are 1000 datapoints per file
@@ -263,7 +278,7 @@ class Preprocessor:
         
         return df
     
-    def extract_season(self,month):
+    def _extract_season(self,month):
         #month is a numeriacal value
         if month in [12,1,2]:
             return 1
@@ -316,8 +331,7 @@ class ClassicalModelManager:
     
 '''
 The autoencoder class was developed using the help of a tutorial: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s and https://www.youtube.com/watch?v=VVDHU_TWwUg
-It only was used to establish syntax and theory in regarding the coding side of pytorch. I still had to change this section with my own theory and found syntax to the project. I also applied some syntax it taught in said video to the AutoencoderModelManager class
-We want to inherit from the NN class as it gives us access to the Mean Squared error loss function for example so that we don't need to define these functions ourselfs
+It only was used to establish syntax and theory in regarding the coding side of pytorch. I still had to change this section with my own theory and found syntax to the project.
 '''
 class Autoencoder(nn.Module):
     def __init__(self):
@@ -354,7 +368,6 @@ class Autoencoder(nn.Module):
         return decoded
     
 #I have made the AutoencoderModelManager class myself
-#the training_loop was developed using the inpiration from a tutorial and some details are similar: https://www.youtube.com/watch?v=zp8clK9yCro&t=214s
 class AutoencoderModelManager():
     def __init__(self):
         self.autoencoder_model = Autoencoder() #Establish the model we use to execute said calculations
@@ -376,7 +389,6 @@ class AutoencoderModelManager():
                 
                 self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
                 loss.backward()#Go back across the dataset using chain rule to check the derivatives and see how the loss function to see the d loss/ d Weight for the gradient of the loss against the weight function.
-                #torch.nn.utils.clip_grad_norm_(self.autoencoder_model.parameters(), max_norm=1.0)# This line ensure that the weights are scaled proportionately to one another avoiding a single weight from being exessively larger than the rest
                 self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It then uses the gradient as such: weight - lr * gradient.
             print(f"Epoch: {epoch + 1 }, Loss: {loss.item():.4f}") #loss is the difference between the constructed and reconstructed output
     
@@ -427,14 +439,15 @@ class Interpretation:
         data_extracted['is_anomaly'] = scores
         filtered_anomaly = data_extracted[data_extracted['is_anomaly'] == -1] #this line also keeps the corresponding rows index after the filter to make sure it matches with the dataextracted df
         #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
-        figure, axis = plt.subplots(figsize=(14,5)) # width then height
+        figure, axis = plt.subplots(figsize=(15,7)) # width then height
         #scatter call for normal points
         axis.scatter(data_extracted.index, data_extracted['anomaly_score'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
         #scatter call for anomaly points
         axis.scatter(filtered_anomaly.index, filtered_anomaly['anomaly_score'],color = 'red',alpha = 1)#normal is +1 and an anomaly is -1
         axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
-        axis.set_xlabel("anomaly index")#xaxis label, font size, font weight, font colour
+        axis.set_xlabel("anomaly date")#xaxis label, font size, font weight, font colour
         axis.set_ylabel("anomaly score")
+        plt.xticks(filtered_anomaly.index,rotation = 90, fontsize= 7)
         plt.title("Diagram of the varying anomaly scores against index occurance")
         plt.tight_layout()#Prevents lables from being cut off
         plt.savefig(path_name)#save figure to a file 
@@ -466,24 +479,27 @@ class Interpretation:
         
     
     def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict, anomalous_window_start_dates):
-        #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
-        figure, axis = plt.subplots(figsize=(30,5)) # width then height
-        #scatter call for normal points
-        axis.scatter(file_to_predict['date'], file_to_predict['adjclose'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
-        #scatter call for adjclose points to plot
-        for group in anomalous_window_start_dates:
-            #required to highlight sections on the graph with anomalous autocorrelation
-            plt.axvspan(group[0], group[-1] + 60, color='red', alpha=0.2)
-        dates = [file_to_predict['date'][index] for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
-        plt.xticks(dates, rotation = 90,fontsize=7)# plots all starting points of the sequences (60 days) onto the graph
-        axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
-        axis.set_xlabel("index of files")#xaxis label, font size, font weight, font colour
-        axis.set_ylabel("adjclose")
-        axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 60])
-        plt.title("Diagram of the varying anomaly scores against index occurance")
-        plt.tight_layout()#Prevents lables from being cut off
-        plt.savefig(path_name)#save figure to a file 
-        plt.close()
+        for column in file_to_predict.columns:
+            if column == 'date':
+                continue
+            #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
+            figure, axis = plt.subplots(figsize=(30,5)) # width then height
+            #scatter call for normal points
+            axis.scatter(file_to_predict['date'], file_to_predict[column],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
+            #scatter call for adjclose points to plot
+            for group in anomalous_window_start_dates:
+                #required to highlight sections on the graph with anomalous autocorrelation
+                plt.axvspan(group[0], group[-1] + 60, color='red', alpha=0.2)
+            dates = [file_to_predict['date'][index] for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
+            plt.xticks(dates, rotation = 90,fontsize=7)# plots all starting points of the sequences (60 days) onto the graph
+            axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
+            axis.set_xlabel("date")#xaxis label, font size, font weight, font colour
+            axis.set_ylabel(f"{column}")
+            axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 60])
+            plt.title("Diagram of the varying anomaly scores against index occurance")
+            plt.tight_layout()#Prevents lables from being cut off
+            plt.savefig(path_name.parent / f"{column}.png")#save figure to a file 
+            plt.close()
     
 """ 
 This class will control the classes and the different sections of the coding project and act as the UI control hub for the user interaction for the project. This is so it can be easily
@@ -495,12 +511,9 @@ class MainControllerUI:
         self.preprocessor = Preprocessor()
         self.classical_model = ClassicalModelManager(0.01)
         self.deep_learning_model_manager = AutoencoderModelManager()
-        
-        
-        
-        
         self.interprebility = Interpretation()
         self.data_loaded = []
+
     def retrieve_stock_market_data(self):
         return self.loader.create_stock_market_dataset()
     
