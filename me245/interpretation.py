@@ -15,7 +15,7 @@ class Interpretation:
         data_extracted['is_anomaly'] = scores
         filtered_anomaly = data_extracted[data_extracted['is_anomaly'] == -1] #this line also keeps the corresponding rows index after the filter to make sure it matches with the dataextracted df
         #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
-        figure, axis = plt.subplots(figsize=(15,7)) # width then height
+        figure, axis = plt.subplots(figsize=(20,7)) # width then height
         #scatter call for normal points
         axis.scatter(data_extracted.index, data_extracted['anomaly_score'],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
         #scatter call for anomaly points

@@ -3,7 +3,7 @@ from pathlib import Path
 import yfinance as yf
 import time 
 import shutil
-
+import sys
 class DataLoader:
     """
     Handles loading, metadata extraction, and structural validation =,
@@ -41,8 +41,9 @@ class DataLoader:
         else:
             #check if a folder exists and creates it if it doesn't exist
             datasets_directory.mkdir(parents=True,exist_ok=True) 
-            raise Exception("There are no CSV files to choose from. Please add a CSV file to be read from into the CSV_Files.")
-        
+            print("Directory: me245/CSV_Files_training_unverified Please enter your files into there ")
+            sys.exit()
+            
         #check if there are enough files that have been accepted 10 is placebo
         if len(datasets_paths_verified) >= 10:
             #we must make the directory if it doesn't exist to store the verified files

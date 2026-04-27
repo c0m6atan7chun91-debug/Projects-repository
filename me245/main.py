@@ -136,7 +136,7 @@ class MainControllerUI:
                         list_of_dates = np.split(list_of_dates,splice_indexs)
                         self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction / "autoencoder_scatter_graph.png", file_to_predict, list_of_dates)
                     
-                    print("The files' prediction has been made. Please check the prediction folder for the new prediction.\n")
+                    print(f"The files' prediction has been made. Please check {asset_prediction} for the new prediction.\n")
                     
                     
                 #check if the user wants to make another prediction using the code below
