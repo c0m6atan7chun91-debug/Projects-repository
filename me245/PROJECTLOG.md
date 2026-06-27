@@ -149,18 +149,8 @@ I am also creating a new timeline for myself. This one aims for me to be complet
 
 I have also made plans to be able to catch up on the writing on my dissertation for the next few weeks. My aim is to remake parts of the introduction and to further develop my survey of literature. I also plan the week after to finish the survey of literature section and start to further develop my design section. Once I am writing the design section my plan is to code up the autoencoder class and the class that manages the autoencoder and create interpretations of it. (The testing of this development will be included in the testing section of my report and will align with the requirements).
 
-I had to take a break this week like many students; I was experiencing burnout as there isn't much space for breaks within this stage of the degree. So it was a suitable idea so I am able to continue working into April. If you think I could have started in December I couldn't as I was ill for most of the time off we had then.
-
-## Week 10 -  22/03/2026
-I had a two modules: Analysis of Algorithms and Cybersecurity group course work given at the same time. As a result of this tight window I had to dedicate all my efforts into these CW. Both of their due dates were around the the 26th and the 30th respectively with 2 weeks to do them.
-
 ## Week 11 - 29/03/2026
-I had a two modules: Analysis of Algorithms and Cybersecurity group course work given at the same time. As a result of this tight window I had to dedicate all my efforts into these CW. Both of their due dates were around the the 26th and the 30th respectively, with 2 weeks to do them.
-
 Though I had some spare time to see how Lags worked into autocorrelation patterns for my write up. I had researched Lags in Week 5 of this project log.
-
-## Week 12 - 05/04/2026
-I had to take the week off to rest up after submitting my last piece of group course work on the 30th of March this week as I am burntout from overloaded work. I have also acknowledged arising health issues from doctors.
 
 ## Week 13 - 12/04/2025
 I have finished the introduction of my dissertation writing, and I have started my dissertation's literature survey.
