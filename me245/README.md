@@ -1,230 +1,263 @@
-# A.D.F.M.D. — Anomaly Detection in Financial Market Data
+# Finomaly — Anomaly Detection in Financial Market Data
 
-A terminal-driven Python application that detects anomalies in financial market time-series data using two unsupervised machine learning models: an **Isolation Forest** (classical ML) and a **deep learning Autoencoder** (PyTorch).
-
----
-
-## What it does
-
-The system ingests OHLCV (Open, High, Low, Close, Volume) financial datasets, engineers a set of temporal and statistical features from the raw price data, and then trains one of two anomaly detection models across the entire training corpus. Once trained, it can flag unusual trading days or periods in any new (unseen) dataset and produce interpretable visual outputs.
-
-Anomalies surfaced by the models can indicate events such as flash crashes, unusual volume spikes, potential insider trading build-up, or other market irregularities that deviate from learned normal behaviour.
+A terminal-based Python tool that trains two unsupervised ML models on historical OHLCV time-series and flags anomalous trading periods in unseen market data, aimed at quantitative analysts and ML researchers.
 
 ---
 
-## How it works
-
-### 1. Data collection (`data_loader.py`)
-
-- **Automatic download**: Enter a ticker symbol (e.g. `AAPL`, `^GSPC`) and a date range. The system fetches OHLCV data via the Yahoo Finance API (`yfinance`) with rate-limiting safeguards (2-second delay between requests, graceful retry on 429 errors). Downloaded files are saved as `<TICKER>_<start>_<end>.csv` (e.g. `AAPL_2015-01-01_2021-01-01.csv`), so the asset and date range covered are immediately identifiable from the filename alone.
-- **Manual CSV**: Bring your own CSV files — place them in the unverified training folder and the system validates and promotes them automatically. Custom files should follow the same `<name>_<start>_<end>.csv` naming convention so that the date range of expected outcomes remains clear from the filename.
-- **Validation**: Every file must contain the required columns (`date`, `open`, `high`, `low`, `close`, `adjclose`, `volume`), have at least 1 000 trading days, contain no missing values, and be ordered chronologically. Files that fail are left in the unverified folder.
-
-### 2. Feature engineering (`preprocessor.py`)
-
-Raw OHLCV values are transformed into 15 normalised features per trading day:
-
-| Feature group | Description |
-|---|---|
-| Log returns | Day-over-day log change for `adjclose`, `open`, `high`, `low`, `close`, and `volume` — scale-invariant measure of price movement |
-| Rolling window divergence | Difference between short, medium, and long rolling means for `volume` and `adjclose` — detects unusual momentum shifts |
-| Intraday ratios | `(open − close) / open` and `(high − low) / open` — captures intraday volatility structure |
-| Temporal features | `year`, `month`, and `season` — lets the model learn expected seasonal patterns and avoid flagging predictable cycles as anomalies |
-
-All features are z-score normalised before training so that datasets from different markets can be concatenated and compared on the same scale.
-
-### 3. Model training
-
-**Option 1 — Isolation Forest** (`classical_model_manager.py`)
-
-- All validated training files are feature-extracted and concatenated into a single DataFrame.
-- An `IsolationForest` (200 trees, 1% contamination, parallelised) is fitted on the combined dataset.
-- The model learns a global notion of "normal" market behaviour across all supplied assets.
-
-**Option 2 — Autoencoder** (`autoencoder.py`, `autoencoder_model_manager.py`)
-
-- Each training file is processed into overlapping 60-day sliding windows (sequences), giving the model a local temporal context equivalent to one financial quarter.
-- Each 60-day window (60 days × 15 features = 900 values) is fed through a fully-connected encoder–decoder network trained with MSE loss to reconstruct its own input.
-- Architecture: `900 → 90 → 45` (encoder) then `45 → 90 → 900` (decoder), all with Tanh activations.
-- Training runs for 20 epochs per file in mini-batches of 32 windows, using the Adam optimiser (lr = 0.0001).
-- At inference time, sequences whose reconstruction error exceeds the mean + 2.33 standard deviations (99% one-tailed threshold) are flagged as anomalous.
-
-### 4. Prediction & interpretation (`interpretation.py`)
-
-After training, you select any `.csv` file from the unseen dataset folder and the system produces:
-
-**For Isolation Forest:**
-- `scatter.png` — anomaly score of every trading day plotted over time, with anomalous points highlighted in red
-- `histogram.png` — distribution of decision-function scores for normal vs. anomalous days, confirming the 1% significance level
-- `shap.png` — SHAP bar chart showing which engineered features most contributed to each anomaly flag
-
-**For Autoencoder:**
-- Per-column scatter plots with anomalous 60-day windows shaded in red, so you can inspect which market variable drove the reconstruction failure
-
-All outputs are saved to `me245/File_of_outcomes/<model_type>/<asset_name>/`.
+<!-- Hero image: replace with the chart that best demonstrates a detected event -->
+> **[IMAGE: hero chart — suggested: Isolation Forest scatter plot for GOOGL 2007–2011 with the 2008 credit-crisis window annotated]**
 
 ---
 
-## Directory structure
+## Key results
 
-```
-me245/
-├── main.py                          # Entry point and terminal UI
-├── data_loader.py                   # Yahoo Finance download + CSV validation
-├── preprocessor.py                  # Feature engineering and sequence creation
-├── classical_model_manager.py       # Isolation Forest wrapper
-├── autoencoder.py                   # PyTorch autoencoder network definition
-├── autoencoder_model_manager.py     # Training loop and prediction logic
-├── interpretation.py                # SHAP, histogram, and scatter visualisations
-│
-├── CSV_Files_training_unverified/   # Drop raw training CSVs here
-├── CSV_Files_training_verified/     # Validated training files (managed automatically)
-├── CSV_Files_unseen_dataset/        # CSVs to run predictions on
-└── File_of_outcomes/                # Prediction outputs, organised by model and asset
+- [RESULT: insert number of training assets used]
+- [RESULT: insert total flagged-day count for Isolation Forest across test assets]
+- [RESULT: insert total flagged-window count for Autoencoder across test assets]
+- [RESULT: describe qualitative alignment with a known market event, e.g. 2008 financial crisis, COVID-19 March 2020]
+
+---
+
+## Quickstart
+
+### 1. Install dependencies
+
+CPU is the default supported configuration; CUDA acceleration is optional (see [Hardware](#hardware)).
+
+```bash
+pip install -r requirements.txt
 ```
 
----
+### 2. Add training data
 
-## Output diagrams
+Place at least 10 valid OHLCV CSV files in:
 
-All diagrams are saved as `.png` files under `me245/File_of_outcomes/<model_type>/<asset_name>/`. The output folder name is taken from the stem of the unseen CSV filename, so the asset and date range of the prediction are encoded directly in the folder path — for example, predictions for `AAPL_2015-01-01_2021-01-01.csv` are saved under `File_of_outcomes/Isolation Forest/AAPL_2015-01-01_2021-01-01/`.
+<!-- Note: me245/ is the current module directory; consider renaming to src/ in a future refactor -->
+```
+me245/CSV_Files_training_unverified/
+```
 
-Outputs are intentionally limited to `.png` charts rather than supplementary CSV exports. The software is designed for users with a financial or quantitative background who can read and interpret the visualisations directly. The charts convey distributional shape, temporal clustering, and feature attribution in a way that is faster to assess than a flat list of flagged rows, and they are the standard medium for presenting anomaly detection results in a quantitative finance context.
+Files downloaded via option `[0]` are saved here automatically. See [Data format](#data-format) for validation rules.
 
-### Isolation Forest
+### 3. Run
 
-#### `scatter.png` — Anomaly score scatter plot
-
-The x-axis is the date index of each trading day in the unseen dataset. The y-axis is the Isolation Forest **decision function score** — a continuous value where more negative means more anomalous. A horizontal black line sits at y = 0, which is the model's boundary between inlier and outlier territory.
-
-- Normal trading days are plotted in **steel blue**
-- Days classified as anomalies (decision score below zero) are plotted in **red**
-- The x-axis ticks show only the dates of flagged anomaly days, rotated 90° so they remain readable
-
-**What to look for:** clusters of red points in narrow time windows often correspond to real market events (crashes, sudden volume surges, earnings shocks). A scatter of isolated red points across many dates may indicate the contamination rate needs tuning, or that the training corpus does not cover that market's normal behaviour well.
-
----
-
-#### `histogram.png` — Score distribution histogram
-
-A frequency histogram that overlays two distributions:
-
-- **Sky blue** bars: decision function scores for all days classified as **normal**
-- **Salmon** bars: decision function scores for all days classified as **anomalies**
-- A vertical black line at x = 0 marks the decision boundary
-
-**What to look for:** the two populations should be clearly separated by the black line, with the anomaly bars pushed into negative score territory and the normal bars clustered in positive territory. Well-separated distributions confirm that the 1% contamination rate is producing a meaningful split rather than arbitrary labelling. Overlap between the two groups is a sign that the model is uncertain around the boundary, and that some flagged events may not be genuine anomalies.
-
----
-
-#### `shap.png` — SHAP feature importance bar chart
-
-Generated using `shap.TreeExplainer` applied to the fitted Isolation Forest. It only considers the rows that were **classified as anomalies** (score = −1) and shows how much each of the 15 engineered features contributed to pushing those data points toward being labelled as outliers.
-
-- Bars are sorted by mean absolute SHAP value from largest to smallest
-- A longer bar means that feature had greater influence on the anomaly classification
-
-**What to look for:** features with the largest bars are the primary drivers of the anomalies found. For example, if `log_volume_change` or `short_mid_diff_volume` dominates, the flagged events are largely volume-driven. If `log_adjclose_change` or `difference_high_low` leads, the anomalies are price-movement-driven. This tells you the *nature* of the market irregularity, not just its location.
-
----
-
-### Autoencoder
-
-#### `<column_name>.png` — Per-feature autocorrelation scatter plot (one file per OHLCV column)
-
-One diagram is produced for every raw column in the unseen CSV (open, high, low, close, adjclose, volume). Each plot shows:
-
-- The raw daily value of that column on the y-axis against date on the x-axis, plotted as **steel blue** dots
-- **Red shaded bands** (semi-transparent) overlaid on every 60-day window whose reconstruction error exceeded the 99% anomaly threshold — consecutive anomalous windows are merged into a single wider band
-- The x-axis ticks mark the start dates of every anomalous sequence, rotated 90° for readability
-- The x-axis is cropped to the span between the first and last anomalous window, removing quiet periods at the edges to focus the view
-
-**What to look for:** a red band that lines up with a visible spike, dip, or sudden regime change in the plotted column confirms that the autoencoder has identified a real structural break in the data. A red band over a visually calm section of a chart may indicate an anomaly in a *different* feature within that same 60-day window — because the autoencoder evaluates all 15 features simultaneously, the anomaly might be driven by, say, a volume surge even when the close price looks ordinary. Comparing the shaded windows across all column plots for the same asset helps identify which variable was the primary driver of each flagged period. The dates at the bottom are the start of said windows.
-
----
-
-## Why SHAP is not used for the Autoencoder
-
-SHAP's `TreeExplainer` works by inspecting the internal split structure of tree-based models (such as the Isolation Forest's ensemble of decision trees) to compute exact, mathematically grounded attributions for each feature. It can do this efficiently because each prediction in a tree model traces a deterministic path through a fixed set of binary splits.
-
-The Autoencoder is a neural network. Its "decision" — whether a 60-day window is anomalous — is not based on a single forward prediction but on the **magnitude of the error** between the network's input and its reconstructed output after passing through hundreds of continuous, non-linear weight operations. There is no tree structure for `TreeExplainer` to inspect.
-
-SHAP does provide gradient-based explainers for neural networks (`DeepExplainer`, `GradientExplainer`), but these explain why the network produced a particular *output value* — in this case, the reconstructed sequence. They do not directly explain why the **reconstruction error** was high for a given window, which is the actual anomaly signal. Applying them here would explain the reconstruction, not the anomaly, making the output misleading rather than informative.
-
-For this reason, the Autoencoder's interpretability is instead handled visually: the per-column scatter plots with shaded anomalous windows allow the user to inspect the raw market data at the time of each flagged period and draw their own conclusion about which variable drove the reconstruction failure.
-
----
-
-## Hardware requirements
-
-The project is pinned to **PyTorch 2.5.1 with CUDA 12.1**, meaning it expects an NVIDIA GPU with CUDA 12.1 support for autoencoder training. On a CUDA-capable machine the training loop runs on the GPU automatically.
-
-If no compatible GPU is available the autoencoder will fall back to CPU. This will work correctly but training will be significantly slower, as the model trains sequentially on each file in the corpus (20 epochs per file) with no parallelism at the file level.
-
-The Isolation Forest is CPU-bound regardless and uses all available cores (`n_jobs=-1`), so hardware has minimal impact on its training time.
-
-There are no strict minimum RAM requirements enforced by the code, but loading and concatenating large numbers of high-frequency CSV files during Isolation Forest training is done entirely in memory. A machine with at least 8 GB RAM is advisable if the training corpus is large.
-
----
-
-## Development status
-
-This project is currently a **work in progress**. The two model pipelines (Isolation Forest and Autoencoder) are deliberately kept as separate, independent classes rather than being unified under a shared base class or interface.
-
-Introducing polymorphism — for example, a common `Model` base class with shared `train` and `predict` methods — would be the natural next step, but it has been deferred until **model persistence (save and load)** is implemented. The two models have meaningfully different save requirements: the Isolation Forest would be serialised with `joblib`, while the Autoencoder requires `torch.save` and `torch.load`. Abstracting these behind a shared interface before the save/load behaviour is finalised would mean designing the abstraction around incomplete behaviour, risking a structural rework once persistence is added.
-
-The planned sequence is:
-1. Implement save and load for both models
-2. Define a shared interface once the full contract (train, predict, save, load) is known
-3. Refactor both managers to implement it
-
-Until then, duplication between the two pipelines is intentional and preferable to a premature abstraction.
-
----
-
-## Running the application
-
-Run from the **project root directory** (the folder above `me245/`), not from inside `me245/`:
+Launch from the **project root** (the directory containing `me245/`):
 
 ```bash
 python me245/main.py
 ```
 
-The terminal menu presents three options:
+Menu options:
 
 ```
-[0] Extract stock market data    — download data from Yahoo Finance
-[1] Isolation Forest             — train and predict with the classical model
-[2] Autoencoder                  — train and predict with the deep learning model
+[0] Extract stock market data    — download OHLCV data from Yahoo Finance
+[1] Isolation Forest             — train classical model and generate predictions
+[2] Autoencoder                  — train deep learning model and generate predictions
 ```
 
-**Minimum requirements for training:** at least 10 valid CSV files in `CSV_Files_training_unverified/`, each with 1 000+ rows of complete OHLCV data.
+---
+
+## How it works
+
+### Data loading (`data_loader.py`)
+
+- **Automatic download**: enter a ticker symbol (e.g. `AAPL`, `^GSPC`) and a date range; the system fetches OHLCV data via `yfinance` with a 2-second inter-request delay to avoid rate limiting. Files are saved as `<TICKER>_<start>_<end>.csv` so the asset and date range are immediately identifiable from the filename.
+- **Manual CSV**: drop your own files into the unverified folder; validation runs automatically and promotes passing files.
+- **Validation rules**: required columns `date`, `open`, `high`, `low`, `close`, `adjclose`, `volume`; minimum 1 000 rows; no missing values; chronological ordering enforced on load. Files that fail remain in the unverified folder.
+
+Missing values are not imputed — rows with gaps are dropped. Methods such as linear interpolation or forward-fill would introduce artificial regularity that could suppress genuine anomalies.
+
+### Feature engineering (`preprocessor.py`)
+
+Raw OHLCV values are transformed into 15 normalised features per trading day before being passed to either model.
+
+| Feature group | Features | Rationale |
+|---|---|---|
+| Log returns | `log_adjclose_change`, `log_open_change`, `log_high_change`, `log_low_change`, `log_close_change`, `log_volume_change` | Raw price levels are non-stationary and strongly autocorrelated; log returns are approximately stationary and scale-invariant across assets |
+| Rolling divergence | `short_mid_diff_adjclose`, `short_long_diff_adjclose`, `short_mid_diff_volume`, `short_long_diff_volume` | Divergence between short (3-day), medium (6-day), and long (12-day) rolling means — detects momentum shifts in price and volume |
+| Intraday structure | `difference_open_close`, `difference_high_low` | Intraday volatility relative to the open price |
+| Temporal | `year`, `month`, `season` | Encodes expected seasonal patterns so predictable cyclical behaviour is not flagged as anomalous (see [Known limitations](#known-limitations)) |
+
+Each file is z-score normalised using its own statistics. This acts as a crude per-asset calibration: all files enter training with comparable numeric ranges, at the cost of discarding cross-asset differences in absolute scale and volatility. A corpus-level scaler (fit once on training data, applied unchanged to test data) is a planned alternative and interacts with the training schedule — see [Design decisions](#design-decisions-and-development-status).
+
+### Models
+
+**Isolation Forest** (`classical_model_manager.py`)
+
+All validated training files are feature-extracted, concatenated into a single DataFrame, and used to fit a single `IsolationForest` (200 trees, `n_jobs=-1`). The `contamination` parameter is set to `0.01` — this is an assumed outlier fraction that tells the model roughly what proportion of points to treat as anomalous, not a significance level. The model produces a continuous decision-function score per trading day; scores below zero are labelled anomalous.
+
+**Autoencoder** (`autoencoder.py`, `autoencoder_model_manager.py`)
+
+Each training file is converted into overlapping 60-day sliding windows (one financial quarter). Each window (60 days × 15 features = 900 values) is passed through a fully-connected encoder–decoder network:
+
+```
+Encoder:  900 → 90 (Tanh) → 45 (Tanh)
+Decoder:  45  → 90 (Tanh) → 900
+```
+
+Tanh activations are used on all hidden layers to preserve the negative values that arise from z-score normalisation (ReLU would clip them). The output layer is linear, so reconstructions are not bounded to [-1, 1] and extreme z-scores remain representable.
+
+The input width of 900 is fixed by the window design (60 days × 15 features). Two encoder stages are used rather than a single 900→45 map because one transformation limits what the encoder can express: the intermediate 90-unit layer extracts general features of the window, which the second stage composes into 45 latent factors. The specific widths are proportion-based heuristics (roughly 10% and 5% of input) chosen to force real compression while retaining capacity; sensitivity to these widths has not yet been tested.
+
+The network is trained file-by-file for 20 epochs in batches of 32 windows, using MSE loss and the Adam optimiser (lr = 0.0001).
+
+At inference, windows whose mean reconstruction error exceeds `mean + 2.33 × std` of the test file's error distribution are flagged. The intent is to select roughly the top 1% of windows; because reconstruction errors are right-skewed rather than Gaussian, the realised flag rate varies by dataset. Replacing this cut with an empirical quantile (`torch.quantile(errors, 0.99)`) is planned, which selects exactly the top 1% with no distributional assumption.
+
+---
+
+## Output charts
+
+<!-- Note: File_of_outcomes/ is the current output directory; consider renaming to outputs/ in a future refactor -->
+All charts are saved as `.png` files under `me245/File_of_outcomes/<model>/<asset_name>/`. The asset folder name is taken from the CSV filename stem, so the ticker and date range are encoded in the output path (e.g. `File_of_outcomes/Isolation Forest/GOOGL_2007-01-01_2011-01-01/`).
+
+Charts are the primary output format. See [Future work](#future-work) for planned CSV export of flagged rows.
+
+### Isolation Forest
+
+#### `scatter.png` — Anomaly score scatter plot
+
+X-axis: date index of each trading day in the unseen dataset. Y-axis: Isolation Forest decision-function score — more negative means more anomalous. A horizontal black line at y = 0 marks the decision boundary.
+
+- Normal days: steel blue
+- Anomalous days (score < 0): red
+- X-axis ticks show only flagged dates, rotated 90°
+
+**What to look for:** red clusters in narrow date windows often correspond to identifiable market events — sharp price moves, elevated volatility, or unusual volume or price patterns around market events. Isolated red points scattered across many dates may indicate the assumed contamination fraction needs adjusting, or that the training corpus lacks sufficient representation of that asset class.
+
+*Example — GOOGL 2007-01-01 to 2011-01-01:*
+
+![scatter](File_of_outcomes/Isolation%20Forest/GOOGL_2007-01-01_2011-01-01/scatter.png)
+
+---
+
+#### `histogram.png` — Decision-function score distribution
+
+Overlaid frequency histogram of decision-function scores for the unseen dataset:
+
+- Sky blue bars: days classified as normal
+- Salmon bars: days classified as anomalous
+- Vertical black line at x = 0: decision boundary
+
+**What to look for:** clear separation between the two populations on either side of the boundary confirms that the assumed contamination fraction is producing a meaningful split. Significant overlap near zero indicates the model is uncertain and some flagged points may be borderline rather than genuine anomalies.
+
+*Example — GOOGL 2007-01-01 to 2011-01-01:*
+
+![histogram](File_of_outcomes/Isolation%20Forest/GOOGL_2007-01-01_2011-01-01/histogram.png)
+
+---
+
+#### `shap.png` — SHAP feature importance
+
+Generated with `shap.TreeExplainer` on the fitted Isolation Forest, applied to anomalous rows only. Bars show mean absolute SHAP value for each feature, sorted descending.
+
+**What to look for:** the leading features indicate the nature of the detected anomalies. Volume-led bars (`log_volume_change`, `short_mid_diff_volume`) suggest volume-driven events; price-led bars (`log_adjclose_change`, `difference_high_low`) suggest price-movement-driven events.
+
+*Example — GOOGL 2007-01-01 to 2011-01-01:*
+
+![shap](File_of_outcomes/Isolation%20Forest/GOOGL_2007-01-01_2011-01-01/shap.png)
+
+---
+
+### Autoencoder
+
+#### `<column>.png` — Per-feature time-series plots with anomaly overlays
+
+One plot per raw OHLCV column (`open`, `high`, `low`, `close`, `adjclose`, `volume`), each showing:
+
+- Steel blue scatter: raw daily values against date
+- Semi-transparent red bands: 60-day windows whose reconstruction error exceeded the heuristic threshold — consecutive flagged windows are merged into a single wider band
+- X-axis ticks: start dates of flagged windows, rotated 90°
+- X-axis cropped to the span between the first and last flagged window
+
+**What to look for:** a red band coinciding with a visible spike, dip, or regime change in the plotted column is consistent with the autoencoder detecting a structural transition. In observed behaviour the model responds most strongly to windows containing a shift from calm to volatile conditions (onset detection) rather than windows fully inside a volatile regime. A band over a visually unremarkable section of one column suggests the anomaly was driven by a different feature within the same 60-day window — comparing all six plots for the same asset helps identify the primary driver.
+
+*Example — GOOGL 2007-01-01 to 2011-01-01:*
+
+![open](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_open.png)
+![high](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_high.png)
+![low](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_low.png)
+![close](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_close.png)
+![adjclose](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_adjclose.png)
+![volume](File_of_outcomes/Autoencoder/GOOGL_2007-01-01_2011-01-01/_volume.png)
+
+---
+
+## Interpretability
+
+### Isolation Forest — SHAP
+
+`shap.TreeExplainer` is directly compatible with the Isolation Forest because it is a tree ensemble; SHAP traverses each tree's split structure to compute exact feature attributions. The explainer is applied to anomalous points only, producing the bar chart described above.
+
+### Autoencoder — interpretability
+
+SHAP has not yet been applied to the autoencoder; this is a deferred implementation choice rather than an impossibility. `shap.GradientExplainer` or `shap.KernelExplainer` could be applied by wrapping reconstruction error as a scalar model output. The planned approach is per-feature reconstruction error attribution: comparing the input and reconstructed output dimension-by-dimension to identify which features the network failed to reconstruct accurately in each flagged window.
+
+---
+
+## Known limitations
+
+- **`year` feature extrapolation**: the `year` feature takes values outside the training range on any future data, making such data appear anomalous by construction under a fixed scaler; under the current per-file scaling it instead acts as a monotonic within-file ramp. SHAP attribution shows it contributes little to detections. It is slated for removal; `month` and `season` are retained as they encode recurring cycles.
+- **Out-of-distribution threshold behaviour**: the autoencoder's heuristic threshold is derived from the test-set reconstruction error distribution and has not been evaluated on out-of-distribution assets. Threshold behaviour in this setting is under review.
+- **Chart title mismatch**: current chart titles reference "anomaly scores" in plots that display raw OHLCV values, and contain a spelling error ("occurance"). Both will be corrected in a future update.
+
+---
+
+## Design decisions and development status
+
+The Isolation Forest and Autoencoder pipelines are deliberately kept as separate, independent classes. A shared `Model` base class covering `train`, `predict`, `save`, and `load` has been deferred because the two models have different serialisation requirements (`joblib` for scikit-learn, `torch.save` for PyTorch), and designing the interface before those are implemented risks a structural rework. Save/load will be built first; the shared abstraction will follow.
+
+The per-file scaler and the file-by-file training schedule interlock: because every file is normalised to the same distribution shape, sequential training behaves near-identically to combined training. If the scaler is changed to a single corpus-level fit, training should simultaneously move to combined, shuffled sequences across all files, otherwise files become genuinely distinct tasks and sequential fine-tuning would bias the model toward the last file trained.
+
+---
+
+## Future work
+
+- Flagged-rows CSV export
+- Per-feature reconstruction error attribution for the autoencoder
+- Remove `year` feature; evaluate replacement temporal encodings
+- Model persistence (save/load) for both models
+- GPU device placement (`.to(device)`) for model and batches
+- Optional box plot of anomaly scores grouped by season or year
+
+---
+
+## Data format
+
+| Requirement | Detail |
+|---|---|
+| Required columns | `date`, `open`, `high`, `low`, `close`, `adjclose`, `volume` |
+| Minimum rows | 1 000 trading days |
+| Missing values | Not permitted — rows with any missing value are dropped |
+| Date ordering | Chronological; enforced automatically on load |
+| Naming convention | `<TICKER>_<YYYY-MM-DD>_<YYYY-MM-DD>.csv` recommended |
+
+The models learn generalised normal behaviour across all training assets; anomalies are flagged relative to broad market norms, not asset-specific baselines.
+
+---
+
+## Hardware
+
+The code currently runs entirely on CPU; the network is small (900 → 90 → 45) and trains without prohibitive overhead. GPU execution would require adding device placement (`.to(device)`) for the model and batches, and is listed under [Future work](#future-work). The Isolation Forest always runs on CPU and uses all available cores (`n_jobs=-1`).
+
+RAM: no minimum is enforced by the code, but Isolation Forest training concatenates all CSV files into memory simultaneously. 8 GB or more is advisable for large training corpora.
 
 ---
 
 ## Dependencies
 
-Key libraries (see `requirements.txt` for the full pinned environment):
-
 | Library | Purpose |
 |---|---|
-| `yfinance` | Yahoo Finance data download |
+| `yfinance` | Yahoo Finance OHLCV download |
 | `pandas`, `numpy` | Data manipulation and feature engineering |
 | `scikit-learn` | Isolation Forest |
-| `torch` (PyTorch 2.5, CUDA 12.1) | Autoencoder neural network |
-| `shap` | Model interpretability |
-| `matplotlib` | Visualisation |
+| `torch` (PyTorch) | Autoencoder neural network |
+| `shap` | Isolation Forest interpretability |
+| `matplotlib` | Chart generation |
 
----
-
-## Data assumptions
-
-- Missing values are treated as corrupted data and the containing row is dropped. No interpolation is performed, as filling gaps artificially smooths the very signals the model is trained to detect.
-- All training CSVs are assumed to be complete (as produced by `yfinance`).
-- The model is **generalised** — it learns normal behaviour across a diverse corpus of assets rather than per-ticker. This improves robustness but means it flags anomalies relative to broad market norms, not asset-specific baselines.
+See `requirements.txt` for pinned versions.
 
 ---
 
 ## Legal notice
 
-This program uses the `yfinance` library to access data via the Yahoo Finance API. `yfinance` is not affiliated with Yahoo. Use of the data is subject to Yahoo's Terms of Service: https://policies.yahoo.com/us/en/yahoo/terms/index.htm. See also the yFinance project page: https://pypi.org/project/yfinance/.
+This project uses `yfinance` to access data via the Yahoo Finance API. `yfinance` is not affiliated with Yahoo. Use is subject to Yahoo's Terms of Service: https://policies.yahoo.com/us/en/yahoo/terms/index.htm. See also the yfinance project page: https://pypi.org/project/yfinance/.

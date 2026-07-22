@@ -32,7 +32,6 @@ class Preprocessor:
         df['difference_high_low'] = (df['high'] - df['low'])/df['open'].clip(lower=1e-9)
         #date extraction the isolation forest needs to tell if a number is normal for a time of year (1-12) for months
         df['date'] = pd.to_datetime(df['date'])
-        df['year'] = df['date'].dt.year
         df['month'] = df['date'].dt.month
         df['season'] = df['month'].copy().apply(self._extract_season)
         df = df.set_index('date')
@@ -58,7 +57,7 @@ class Preprocessor:
         elif month in [9,10,11]:
             return 4
         
-    def create_sequences(self,dataset_extracted ,window_size = 60):
+    def create_sequences(self,dataset_extracted ,window_size = 15):
         #dataset_extracted is a df
         #Each window will be 60 days and a list of individual tensors will store these said windows
         #Also df headers are removed when coverted to numpy so there is no need to worry about removing them. I had to check online.

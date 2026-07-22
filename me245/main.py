@@ -129,12 +129,14 @@ class MainControllerUI:
                         extracted_predict_data = self.preprocessor.machine_learning_data_extraction(file_to_predict)
                         tensor_of_combined_sequences = self.preprocessor.create_sequences(extracted_predict_data)
                         list_of_dates = self.deep_learning_model_manager.prediction(tensor_of_combined_sequences)
-                        print(f"The anomaly rate found in the dataset is {len(list_of_dates)/len(extracted_predict_data):.4f}%")
+                        print(f"The anomaly rate found in the dataset is {len(list_of_dates)*100/len(extracted_predict_data):.4f}%")
                         #now we only need to group the values that have consecutive range of 60 between each other. for example 1,23,56,77, 544 would be grouped as [1,77],[544] for matlib
                         #for Shap you need the actual sequence itself
-                        splice_indexs = np.where(np.diff(list_of_dates) > 60)[0]+1#np.diff() returns the differences between indexs in the list. Also, [0] returns the actual array of indicies and the + 1 represents where to cut after the selected value so for example you want to cut after 6 the +1 indicates to cut after it
+                        splice_indexs = np.where(np.diff(list_of_dates) > 15)[0]+1#np.diff() returns the differences between indexs in the list. Also, [0] returns the actual array of indicies and the + 1 represents where to cut after the selected value so for example you want to cut after 6 the +1 indicates to cut after it
                         list_of_dates = np.split(list_of_dates,splice_indexs)
-                        self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction / "autoencoder_scatter_graph.png", file_to_predict, list_of_dates)
+                        dates_not_filtered = pd.to_datetime(file_to_predict['date']).isin(extracted_predict_data.index)#check for dates that haven't been filtered during extraction
+                        raw_filtered = file_to_predict[dates_not_filtered].reset_index(drop=True) #only accept data that has the dates that were extracted
+                        self.interprebility.anomaly_autocorrelation_scatter_graph(asset_prediction / "autoencoder_scatter_graph.png", raw_filtered, list_of_dates)
                     
                     print(f"The files' prediction has been made. Please check {asset_prediction} for the new prediction.\n")
                     

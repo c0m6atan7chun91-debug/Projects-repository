@@ -18,12 +18,13 @@ class AutoencoderModelManager():
             for batch_increment in range(0, len(sequences), 32):
                 #do the forward then backward pass of the loop and update the weights
                 batch = sequences[batch_increment : batch_increment+32]
-                input_vector_sequence = batch.reshape(-1,900) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements. So it takes in batches of 32 sequences at a time
+                input_vector_sequence = batch.reshape(-1,210) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements. So it takes in batches of 32 sequences at a time
                 reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
                 loss = self.training_criterion(reconstructed_sequence_data, input_vector_sequence) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is
                 
                 self.optimization.zero_grad() #this clears the gradients history that was previously calculated, otherwise you will have incremented the sum of the previous one
                 loss.backward()#Go back across the dataset using chain rule to check the derivatives and see how the loss function to see the d loss/ d Weight for the gradient of the loss against the weight function.
+                torch.nn.utils.clip_grad_norm_(self.autoencoder_model.parameters(), max_norm=1.0)
                 self.optimization.step()#this updates the weights of the autoencoder to try and minimize the difference between the output from the autoencoder and the input to the autoencoder. It then uses the gradient as such: weight - lr * gradient.
             print(f"Epoch: {epoch + 1 }, Loss: {loss.item():.4f}") #loss is the difference between the constructed and reconstructed output
     
@@ -40,7 +41,7 @@ class AutoencoderModelManager():
         #Ensures that it stops making a computation graph during a forward pass. So it doesn't take up more memory.
         with torch.no_grad():
             for sequence in sequences:
-                input_vector_sequence = sequence.reshape(-1,900) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
+                input_vector_sequence = sequence.reshape(-1,210) #doing -1 will infer the 2nd dimension and the 900 will say how many data points are expected per column. as 60*15 is = 900 it will create a vector with 900 elements
                 reconstructed_sequence_data = self.autoencoder_model(input_vector_sequence) #enter the required sequence for training into the model to create a model output of it
                 losses_per_sequence = self.prediction_criterion(reconstructed_sequence_data, input_vector_sequence).mean(dim=1) #you check the difference between the reconstructed and input sequence by using the MSE loss function to find how different it is and .mean() returns each sequences loss values from a batch in a vector of 1 dimension but as an average for that sequence
                 for loss in losses_per_sequence:
@@ -53,5 +54,6 @@ class AutoencoderModelManager():
             std_loss = tensor_of_loss_values.std() #return a tensor  so need to use .item() to return the actual std.std reconstruction errors are used to create the threshold to find how many lie in a 99% confidence based on the relative distance from the mean of sequences more or less a span of how much the population should lie in
             #This is where I found the measuremetn of a 99% confidence interval for a one tailed test: https://stats.libretexts.org/Bookshelves/Introductory_Statistics/Statistics_with_Technology_2e_(Kozak)/12%3A_Appendix-_Critical_Value_Tables/12.02%3A_Normal_Critical_Values_for_Confidence_Levels
             #so you use the 98% confidence interval (which is for two tail tests) as we are using one tail it will cover 99% of the population so it is 2.33 std away from the mean
-            list_of_loss_values_and_dates = [i for i, value in enumerate(list_of_loss_values) if value > 2.33* std_loss.item() + mean_loss.item()]
+            threshold = torch.quantile(tensor_of_loss_values, 0.95)
+            list_of_loss_values_and_dates = [i for i, value in enumerate(list_of_loss_values) if value > threshold.item()]
             return list_of_loss_values_and_dates

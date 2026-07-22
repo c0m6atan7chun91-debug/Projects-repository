@@ -1,5 +1,8 @@
 import shap
 import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib.dates as mdates
+from matplotlib.ticker import EngFormatter
     
 class Interpretation:
     def interpretation_collection(self, scores, predictions,data_extracted, path_name, isolation_forest_model):
@@ -40,7 +43,15 @@ class Interpretation:
         plt.ylabel("frequency")
         plt.xlabel("anomaly_score")
         plt.legend()
-        plt.tight_layout()#Prevents lables from being cut off
+        plt.figtext(0.5, 0.01,
+            "Distribution of Isolation Forest decision-function scores. "
+            "Days scoring below 0 are flagged to be likely anomalous — "
+            f"{(predictions < 0).sum()} of {len(predictions)} days "
+            f"({100 * (predictions < 0).mean():.1f}%). "
+            "The contamination parameter (1%) is an assumed outlier fraction "
+            "set at training, so the realised flag rate on unseen data varies.",
+            ha="center", fontsize=9, style="italic", wrap=True)
+        plt.subplots_adjust(bottom=0.18)
         plt.savefig(path_name)#save figure to a file 
         plt.close()
         
@@ -53,7 +64,7 @@ class Interpretation:
         plt.savefig(path_name)#save figure to a file 
         plt.close()
         
-    
+    """
     def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict, anomalous_window_start_dates):
         for column in file_to_predict.columns:
             if column == 'date':
@@ -65,15 +76,59 @@ class Interpretation:
             #scatter call for adjclose points to plot
             for group in anomalous_window_start_dates:
                 #required to highlight sections on the graph with anomalous autocorrelation
-                plt.axvspan(group[0], group[-1] + 60, color='red', alpha=0.2)
-            dates = [file_to_predict['date'][index] for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
+                plt.axvspan(group[0], group[-1] + 15, color='red', alpha=0.2)
+            dates = [pd.to_datetime(file_to_predict['date'][index]) for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
             plt.xticks(dates, rotation = 90,fontsize=7)# plots all starting points of the sequences (60 days) onto the graph
             axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
             axis.set_xlabel("date")#xaxis label, font size, font weight, font colour
             axis.set_ylabel(f"{column}")
-            axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 60])
-            plt.title("Diagram of the varying anomaly scores against index occurance")
+            axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 15])
+            plt.title(f"Scatter graph of date against {column} from dataset")
+            plt.figtext(0.5, 0.01, "Shaded bands: windows exceeding the 99th-percentile reconstruction error.", ha="center", fontsize=9, style="italic", wrap=True) #informs the user of the purpose of the graph.
             plt.tight_layout()#Prevents lables from being cut off
             plt.savefig(path_name.parent / f"{column}.png")#save figure to a file 
             plt.close()
-    
+"""
+    def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict,
+                                          anomalous_window_start_dates,
+                                          flag_fraction=0.05, window_size=15):
+        dates = pd.to_datetime(file_to_predict['date'])
+        columns = [c for c in file_to_predict.columns if c != 'date']
+        n_flagged = sum(len(g) for g in anomalous_window_start_dates)
+        n_windows = len(file_to_predict) - window_size
+
+        figure, axes = plt.subplots(len(columns), 1,
+                                    figsize=(16, 3 * len(columns)), sharex=True)
+
+        for axis, column in zip(axes, columns):
+            axis.scatter(dates, file_to_predict[column], color='steelblue', s=12)
+            for group in anomalous_window_start_dates:
+                start = dates[group[0]]
+                end   = dates[min(group[-1] + window_size, len(dates) - 1)]
+                axis.axvspan(start, end, color='red', alpha=0.2)
+            axis.set_ylabel(column)
+            if column == 'volume':
+                axis.yaxis.set_major_formatter(EngFormatter())
+
+        # band start-date annotations on the top panel only
+        top = axes[0]
+        for group in anomalous_window_start_dates:
+            start = dates[group[0]]
+            top.annotate(str(start.date()), xy=(start, top.get_ylim()[1]),
+                            rotation=90, fontsize=7, va='top', ha='right')
+
+        axes[-1].xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        plt.setp(axes[-1].get_xticklabels(), rotation=90, fontsize=8)
+        axes[-1].set_xlabel("date")
+
+        figure.suptitle(f"{path_name.parent.name}: anomalous {window_size}-day "
+                        f"windows shaded (autoencoder)", y=0.995)
+        figure.text(0.5, 0.005,
+                    f"Shaded: top {flag_fraction:.0%} of {n_windows} windows by "
+                    f"reconstruction error ({n_flagged} flagged). Top-panel labels "
+                    f"give window start dates.",
+                    ha="center", fontsize=9, style="italic", wrap=True)
+        figure.savefig(path_name.parent / "all_features.png",
+                        bbox_inches="tight", dpi=130)
+        plt.close(figure)
