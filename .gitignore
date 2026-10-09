@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Editor settings
+.vscode/
+
+# Trained models
+me245/saved_models/
+
+# Generated outputs
+me245/File_of_outcomes/
+
+# Downloaded market data
+me245/CSV_Files_training_verified/
+me245/CSV_Files_training_unverified/
+me245/CSV_Files_unseen_dataset/

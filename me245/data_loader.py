@@ -12,10 +12,22 @@ class DataLoader:
     This class handles the basic data loading for all files to be read from the given file location from the user. It is effectively data preprocessing 1 
     as it is suppose to check if the files are valid and can be preprocessed by the ML project before it goes onto the stage 2 of data preprocessing.
     """
+    
+    def yes_or_no_selection(self, statement):
+        while(True):
+            user_input = input(statement)
+            if user_input.lower() == "y":
+                return True
+            elif user_input.lower() == "n":
+                return False
+            else:
+                print("[y]es or [n]o are the only valid inputs please try again).\n")
+                    
+    
     def load_and_validate_dataset(self):
         print("="*60)
         #convert the input string input into a path object        
-        datasets_directory = Path('me245/CSV_Files_training_unverified')
+        datasets_directory = Path('CSV_Files_training_unverified')
         datasets_paths_verified = []
         
         #now we must go through each file within the directory within the CSV_Files_training_unverified
@@ -41,13 +53,13 @@ class DataLoader:
         else:
             #check if a folder exists and creates it if it doesn't exist
             datasets_directory.mkdir(parents=True,exist_ok=True) 
-            print("Directory: me245/CSV_Files_training_unverified Please enter your files into there ")
+            print("Directory: CSV_Files_training_unverified Please enter your files into there ")
             sys.exit()
             
         #check if there are enough files that have been accepted 10 is placebo
         if len(datasets_paths_verified) >= 10:
             #we must make the directory if it doesn't exist to store the verified files
-            destination_directory = Path("me245/CSV_Files_training_verified")
+            destination_directory = Path("CSV_Files_training_verified")
             destination_directory.mkdir(parents=True,exist_ok=True)
             try:
                 #copy the files that are valid into the folder which is verified
@@ -148,20 +160,14 @@ class DataLoader:
                             exist_ok checks if the folder exists if it does then it moves onto the next line of code. It ensure that the code doesn't crash if it exists
                             '''
                             
-                            while(True):
-                                attempt_answer = input(f"Would you like {name_of_market} to be in the [u]nseen directory or the [t]raining unverified folder? \n")
-                                if attempt_answer.lower() == 'u':
-                                    directory = Path("me245/CSV_Files_unseen_dataset")
-                                    directory.mkdir(parents=True,exist_ok=True) 
-                                    break
-                                elif attempt_answer.lower() == 't':
-                                    #check if a folder exists and define it
-                                    directory = Path("me245/CSV_Files_training_unverified")
-                                    directory.mkdir(parents=True,exist_ok=True) 
-                                    break
-                                else:
-                                    print("[u]nseen directory or the [t]raining unverified are the only valid inputs please try again.)\n")
-                        
+                            answer = self.yes_or_no_selection(f"Would you like {name_of_market} to be in the unseen directory? If not then it will go into the training folder. [y]es or [n]o \n")
+                            if answer:
+                                directory = Path("CSV_Files_unseen_dataset")
+                                directory.mkdir(parents=True,exist_ok=True) 
+                            else:
+                                #check if a folder exists and define it
+                                directory = Path("CSV_Files_training_unverified")
+                                directory.mkdir(parents=True,exist_ok=True) 
                             
                             #this line adds the designated file path to the path class the '/' gets overloaded and is now a function that adds it to the path using the correct slash for the operating system
                             directory = directory / f"{name_of_market}_{start_date_dataset}_{end_date_dataset}.csv"
@@ -171,30 +177,12 @@ class DataLoader:
                     #if there is a problem in access for developers or markers please delete the associated cookies to yfinance to reset this problem
                     time.sleep(5)
                     
-                
                     #User may need more than one dataset
-                    while True:
-                        attempt_answer = input("Dataset has been created. Would you like to try again? ([y]es or [n]o)\n")
-                        if attempt_answer.lower() == 'n':
-                            stop_data_collection = True
-                            break
-                        elif attempt_answer.lower() == 'y':
-                            #stops the function and reaches finally
-                            break
-                        else:
-                            print("[y]es or [n]o are the only valid inputs please try again.)\n")
+                    stop_data_collection = not self.yes_or_no_selection("Dataset has been created. Would you like to try again? ([y]es or [n]o)\n")
                         
                 except Exception as e:
-                    while True:
-                        print(f"{e}")
-                        attempt_answer = input("Data doesn't exist or too many attempts have been made to request it. Would you like to try again? ([y]es or [n]o)\n")
-                        if attempt_answer.lower() == 'n':
-                            stop_data_collection = True
-                            break
-                        elif attempt_answer.lower() == 'y':
-                            break
-                        else:
-                            print("[y]es or [n]o are the only valid inputs please try again.)\n")
+                    print(f"{e}")
+                    stop_data_collection = not self.yes_or_no_selection("Data doesn't exist or too many attempts have been made to request it. Would you like to try again? ([y]es or [n]o)\n")
         except Exception as WANerror:
             #to catch network errors
             raise Exception(f"Session with Yahoo finance could not be created due to {WANerror}.")
@@ -204,12 +192,12 @@ class DataLoader:
     #proceedure
     def reset_file_validation(self):
         #move all files from validation on boot up
-        datasets_directory = Path('me245/CSV_Files_training_verified')
+        datasets_directory = Path('CSV_Files_training_verified')
         datasets_directory.mkdir(parents=True,exist_ok=True)
         all_sub_directories = list(datasets_directory.glob("*.csv"))
         
         #now reuse the same variable as it isn't needed again
-        datasets_directory = Path('me245/CSV_Files_training_unverified')
+        datasets_directory = Path('CSV_Files_training_unverified')
         datasets_directory.mkdir(parents=True,exist_ok=True)
         try:
             #copy the files that are .csv into the folder which is unverified

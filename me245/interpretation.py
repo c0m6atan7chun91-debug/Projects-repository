@@ -64,64 +64,53 @@ class Interpretation:
         plt.savefig(path_name)#save figure to a file 
         plt.close()
         
-    """
-    def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict, anomalous_window_start_dates):
-        for column in file_to_predict.columns:
-            if column == 'date':
-                continue
-            #subplots() returns two thing figure-the overall container and axes - the actual plot area where you draw things
-            figure, axis = plt.subplots(figsize=(30,5)) # width then height
-            #scatter call for normal points
-            axis.scatter(file_to_predict['date'], file_to_predict[column],color = 'steelblue',alpha = 1)#x-axis then y-axis and alpha is the transparency
-            #scatter call for adjclose points to plot
-            for group in anomalous_window_start_dates:
-                #required to highlight sections on the graph with anomalous autocorrelation
-                plt.axvspan(group[0], group[-1] + 15, color='red', alpha=0.2)
-            dates = [pd.to_datetime(file_to_predict['date'][index]) for group in anomalous_window_start_dates for index in group]#this line plots the indexs that are anomolous onto the x-axis
-            plt.xticks(dates, rotation = 90,fontsize=7)# plots all starting points of the sequences (60 days) onto the graph
-            axis.axhline(y = 0,color = 'black', linewidth=1) # draws a horizontal line across the entire plot at a given y value. y being where the line sits(threshold),color of line, linewidth,linestyle,label - text shown for legend
-            axis.set_xlabel("date")#xaxis label, font size, font weight, font colour
-            axis.set_ylabel(f"{column}")
-            axis.set_xlim(file_to_predict['date'][anomalous_window_start_dates[0][0]],file_to_predict['date'][anomalous_window_start_dates[-1][-1]+ 15])
-            plt.title(f"Scatter graph of date against {column} from dataset")
-            plt.figtext(0.5, 0.01, "Shaded bands: windows exceeding the 99th-percentile reconstruction error.", ha="center", fontsize=9, style="italic", wrap=True) #informs the user of the purpose of the graph.
-            plt.tight_layout()#Prevents lables from being cut off
-            plt.savefig(path_name.parent / f"{column}.png")#save figure to a file 
-            plt.close()
-"""
+
     def anomaly_autocorrelation_scatter_graph(self, path_name, file_to_predict,
-                                          anomalous_window_start_dates,
-                                          flag_fraction=0.05, window_size=15):
+                                        anomalous_window_start_dates,
+                                        flag_fraction =0.05, window_size = 15):
         dates = pd.to_datetime(file_to_predict['date'])
-        columns = [c for c in file_to_predict.columns if c != 'date']
-        n_flagged = sum(len(g) for g in anomalous_window_start_dates)
-        n_windows = len(file_to_predict) - window_size
-
-        figure, axes = plt.subplots(len(columns), 1,
-                                    figsize=(16, 3 * len(columns)), sharex=True)
-
-        for axis, column in zip(axes, columns):
-            axis.scatter(dates, file_to_predict[column], color='steelblue', s=12)
-            for group in anomalous_window_start_dates:
-                start = dates[group[0]]
-                end   = dates[min(group[-1] + window_size, len(dates) - 1)]
-                axis.axvspan(start, end, color='red', alpha=0.2)
-            axis.set_ylabel(column)
-            if column == 'volume':
-                axis.yaxis.set_major_formatter(EngFormatter())
-
+        columns_not_date = [ column for column in file_to_predict.columns if column != 'date']
+        n_flagged = sum(len(g) for g in anomalous_window_start_dates) #Number of flagged dates within the dataset
+        n_windows = len(file_to_predict) - window_size #The limit the windows can start at
+        
+        #figure represents the whole image and axes is an array of individual plots, one per row.
+        #len(columns),1: the grid layout, as rows then columns. You get one row per data column (OHLCAV)
+        #and a single column, so the plots sit on top of each other. With a 6x1 grid.
+        #figsize() the figure size in inches, width then height
+        #sharex = true :all the plots share the same axis. Zooming or setting limits apply to all plots. Hides the date labels from all but the bottom one. A shared red band therefore sits at the same position.
+        figure, axes = plt.subplots(len(columns_not_date), 1,
+                                    figsize=(16, 3 * len(columns_not_date)), sharex=True)
+        
+        
+        #Zip() takes two or more lists and walks through them together. On each step ti hands you one item from each list as  a pair.
+        # set_major_formatter() - Sets the function that turns each labelled tick value into text.
+        # ENgFormatter - It writes numbers with metric prefixes, like engineering notation e.g. 2,500 = 2.5k and 40,000,000 = 40M
+        for axis, column in zip(axes, columns_not_date):
+                    axis.scatter(dates, file_to_predict[column], color='steelblue', s=12)
+                    for group in anomalous_window_start_dates:
+                        start = dates[group[0]]
+                        end   = dates[min(group[-1] + window_size, len(dates) - 1)]# chooses the last group flagged or last possible position to flag
+                        axis.axvspan(start, end, color='red', alpha=0.2)
+                    axis.set_ylabel(column)
+                    if column == 'volume':
+                        axis.yaxis.set_major_formatter(EngFormatter())
+        
         # band start-date annotations on the top panel only
-        top = axes[0]
+        top = axes[0] #selects the first plot
         for group in anomalous_window_start_dates:
             start = dates[group[0]]
+            #top.get_ylim() - returns the current y-axis range of the top plot as a pair (bottom, top)
             top.annotate(str(start.date()), xy=(start, top.get_ylim()[1]),
-                            rotation=90, fontsize=7, va='top', ha='right')
-
-        axes[-1].xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+                            rotation=90, fontsize=7, va='top', ha='right') # last two variables are postions
+            
+        #Locatior decides where ticks are placed and formatter decides what text each tick shows.
+        #mdates.MonthLocator(interval=2): puts a tick on the 1st of every 2nd month.
+        axes[-1].xaxis.set_major_locator(mdates.MonthLocator(interval=2))#Sets where the tick marks go on the bottom plot's date axis.
         axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         plt.setp(axes[-1].get_xticklabels(), rotation=90, fontsize=8)
         axes[-1].set_xlabel("date")
-
+        
+        #sets a title for the whole figure: one heading centred above all 6 plots. "Sup" is short for "super", as in a title over the others.
         figure.suptitle(f"{path_name.parent.name}: anomalous {window_size}-day "
                         f"windows shaded (autoencoder)", y=0.995)
         figure.text(0.5, 0.005,

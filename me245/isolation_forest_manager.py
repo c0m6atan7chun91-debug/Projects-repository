@@ -1,10 +1,11 @@
 from sklearn.ensemble import IsolationForest
+from machine_learning_model import MachineLearningModel
+import joblib
 
 
 
-
-class ClassicalModelManager:
-    def __init__(self, contamintion_input):
+class IsolationForestManager(MachineLearningModel):
+    def __init__(self, contamination_input):
         # Contamination is the expected % of anomalies (e.g., 3%)
         """
         Initialize the Isolation Forest model.
@@ -17,16 +18,26 @@ class ClassicalModelManager:
         :param warmstart: decides if it will continue based off of the previously made trees
         :param bootstrap: It decides if each tree uses a random sample with or without replacement (the latter by default)
         """
-        self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamintion_input,n_jobs=-1)
+        super().__init__()
+        self.model_name  = "Isolation Forest"
+        self.isolation_forest = IsolationForest(n_estimators = 200, contamination=contamination_input, n_jobs=-1)
     
-    def classical_model_training(self,train):
+    def training_loop(self,train):
         #Each time .fit() is called completely overwrites it previous training each time it is called so it needs to train all in one go
         self.isolation_forest.fit(train) #O(nlogn) time complexity for training
     
-    def classical_model_prediction(self,unseen_data):
+    def prediction(self,unseen_data):
         #For each observation, tells whether or not (+1 or -1) it should be considered as an inlier according to the fitted model.
         scores = self.isolation_forest.predict(unseen_data)
         #The anomaly score of the input samples. The lower, the more abnormal. Negative scores represent outliers, positive scores represent inliers.
         prediction = self.isolation_forest.decision_function(unseen_data)#the list of
         return scores, prediction
     
+    def save(self, path):
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path = path.with_suffix(".joblib")
+        joblib.dump(self.isolation_forest, path)
+    
+    def load(self, path):
+        path.parent.mkdir(parents=True,exist_ok=True)
+        self.isolation_forest = joblib.load(path)

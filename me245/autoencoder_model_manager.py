@@ -1,10 +1,13 @@
 from autoencoder import Autoencoder
 import torch
 import torch.nn as nn
+from machine_learning_model import MachineLearningModel
 
 
-class AutoencoderModelManager():
+class AutoencoderModelManager(MachineLearningModel):
     def __init__(self):
+        super().__init__()
+        self.model_name  = "Autoencoder"
         self.autoencoder_model = Autoencoder() #Establish the model we use to execute said calculations
         self.training_criterion = nn.MSELoss() #You do this to establish the function that will be used to compare the input and output values of the autoencoder, so it is the criterion
         self.prediction_criterion = nn.MSELoss(reduction='none') #reduction='none' instead of allowing it to return one average loss value for the entire batch entered (like the training one). It returns a tensor of the same shape as the input (meaning each input sequence has an assigned loss value).
@@ -57,3 +60,25 @@ class AutoencoderModelManager():
             threshold = torch.quantile(tensor_of_loss_values, 0.95)
             list_of_loss_values_and_dates = [i for i, value in enumerate(list_of_loss_values) if value > threshold.item()]
             return list_of_loss_values_and_dates
+        
+    def save(self, path):
+        '''
+        Writes the object (autoencoder in this case) to a file. Pytorch serialises (which means saving an object into a format that can be saved to disk or reconstructed (deserialised) later back into the same memory)
+        with pythons pickle (converting python objects into bytes stream and can restore them), packed into a zip file format. by convention the files ends in .pt or .pth
+        .state_dict() returns a dictionary mapping each layer's parameter name to its tensor of learned values.
+        '''
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path = path.with_suffix(".pt")
+        torch.save(self.autoencoder_model.state_dict(), path)
+        
+    def load(self, path):
+        '''
+        Loads a previously trained autoencoder from a .pt file so it can make predictions without retraining.
+        torch.load() deserialises the file back into the dictionary of layer names and their tensors of learned values.
+        weights_only=True only allows tensors and basic types to be loaded, which is safer as pickle files can run code.
+        load_state_dict() uses that dictionary's name-to-tensor mapping to copy the saved weights into the existing autoencoder_model object's layers.
+        It raises an error if any layer name or shape doesn't match, so a file from a different architecture can't be half loaded.
+        '''
+        path.parent.mkdir(parents=True,exist_ok=True)
+        self.autoencoder_model.load_state_dict(torch.load(path, weights_only=True, map_location='cpu'))
+        self.autoencoder_model.eval()
